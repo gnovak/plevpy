@@ -3,7 +3,8 @@
 # Implementation of analytic model of radiative/convective planet
 # following Robinson + Catling ApJ 757:104 (2012)
 #
-# Models should absolutely be made into objects.
+# Can't reproduce their fig 4: I get the same log derivs indep of n
+# Fig six axes are wrong and lines look sort of ok, but not great.
 
 from numpy import *
 import scipy.optimize, scipy.integrate
@@ -11,14 +12,437 @@ import pylab as pl
 
 import structure
 
+sigma_cgs = 5.67e-5
+
+def test():
+    # quick test to exercise all of the code paths
+    # spec tau0, sigma, 
+    mm = Planet(tau0=100, sig0=9, nn=1, alpha=1,
+                t1_cgs=75, k1=1, t2_cgs=0, k2=0, tint_cgs=75,
+                gamma=1.67, dd=1.5, kappa_cgs=0.2, gravity=True)
+
+    # spec  tau0, p0
+    mm = Planet(tau0=100, sig0=None, p0_cgs=1e2*1e6, nn=1, alpha=1,
+                t1_cgs=75, k1=1, t2_cgs=0, k2=0, tint_cgs=75,
+                gamma=1.67, dd=1.5, kappa_cgs=0.2, gravity=True)
+
+    # spec  t0, sigma
+    mm = Planet(tau0=None, t0_cgs=300, sig0=9, nn=1, alpha=1,
+               t1_cgs=75, k1=1, t2_cgs=0, k2=0, tint_cgs=75,
+               gamma=1.67, dd=1.5, kappa_cgs=0.2, gravity=True)
+
+    # spec  t0, p0
+    mm = Planet(tau0=None, t0_cgs=300, sig0=None, p0_cgs=1e2*1e8,nn=1, alpha=1,
+               t1_cgs=75, k1=1, t2_cgs=0, k2=0, tint_cgs=75,
+               gamma=1.67, dd=1.5, kappa_cgs=0.2, gravity=True)
+
+    # these are not used in solving for a model, just check them to make sure they run
+    mm.frad_down_conv(1.1)
+
+# Planet(tint_cgs, t1_cgs=0, k1=0, t2_cgs=0, k2=0, tau0=None, t0_cgs=None, sig0=None, p0_cgs=None, nn=1, alpha=1, gamma=1.66, dd=1.5, dtau0=1e-4, dt0=1e-2, dgg=1e-2, kappa_cgs=None, gravity=False)    
+class Planet:
+    # finding the surface gravity takes a long time and isn't always necessary, so skip it by default.
+    def __init__(self, tint_cgs,      # Need some value for this
+                 t1_cgs=0, k1=0, t2_cgs=0, k2=0,  # Might need some of these
+                 tau0=None, t0_cgs=None,   # Need one or the other of these
+                 sig0=None, p0_cgs=None,   # Might need one or the other of these
+                 nn=1, alpha=1, gamma=1.66, dd=1.5,   # These have good defaults
+                 dtau0=1e-4, dt0=1e-2, dgg=1e-2, # Precision of root finding
+                 kappa_cgs=None, gravity=False):  # Have to do with finding pressure and surface gravity
+
+        # fill in values
+        self.nn = float(nn)
+        self.alpha = alpha
+        self.t1_cgs = t1_cgs
+        self.k1 = float(k1)
+        self.t2_cgs = t2_cgs
+        self.k2 = float(k2)
+        self.tint_cgs = tint_cgs
+        self.gamma = float(gamma)
+        self.dd = float(dd)
+
+        # opactity used to solve for pressure in the radiative zone
+        if not callable(kappa_cgs): self.kappa = lambda x,y: 0*x + 0*y + kappa_cgs
+        else: self.kappa = kappa_cgs
+
+        # simple derived quantities
+        self.f1_cgs, self.f2_cgs, self.fint_cgs = [sigma_cgs*tt**4 for tt in t1_cgs, t2_cgs, tint_cgs]
+        self.beta = alpha*(gamma-1)/gamma
+
+        # Not so important parameters
+        self.dtau0 = dtau0
+        self.dt0 = dt0
+        self.dgg = dgg
+        self.kmin = 1e-3
+        self.verbose = True
+
+        # find unknown params        
+        if tau0 and t0_cgs: 
+            raise ValueError, "Can't specify both tau0 and t0_cgs"        
+        elif tau0:
+            self.tau0 = float(tau0)
+            self.tau_rc, self.t0_cgs = self._model()
+        elif t0_cgs: 
+            self.t0_cgs = t0_cgs
+            self.tau_rc, self.tau0 = self._rc_model()
+        else: 
+            raise ValueError, "Must specify one of tau0 and t0_cgs"
+
+        # If you specify sigma0 and tau0, you need to wait to find p0
+        # until after you've solved for t0.  The pressure isn't often
+        # used, actually, so it's possible to specify neither p0 not
+        # sig0 and have things work...
+        if p0_cgs and sig0: raise ValueError, "Can't specify both p0 and sig0"
+        self.p0_cgs = p0_cgs or (sig0 and find_pressure(sig0, self.t0_cgs))
+
+        if gravity:
+            self.gg_cgs = self._surface_gravity()
+            
 ##############################
 ## Convective region
 
-sigma_cgs = 5.67e-5
-# Parameters
-# tau tau0 sig0 t0 nn alpha f1_cgs k1 f2_cgs k2 fint_cgs gamma dd p0
-# 
-# outputs t_rc t0
+    def frad_up_conv(s, tau, t0=None, tau0=None):
+        """Upward radiative flux in the convective region, RC eq 13"""
+
+        # Gamma from their paper is defined thusly ito scipy functions
+        def Gamma(a,x):
+            return scipy.special.gamma(a)*scipy.special.gammaincc(a,x)
+
+        # Allow temp to be an argument in order to carry out solution
+        # for tau_rc.  If it's not specified, use the value in the
+        # object.
+        if t0 is None: t0 = s.t0_cgs
+        if tau0 is None: tau0 = s.tau0
+
+        ex = 4*s.beta/s.nn
+
+        prefactor = sigma_cgs*t0**4
+        gamfactor = exp(s.dd*tau)*(s.dd*tau0)**(-ex)
+        expterm = exp(s.dd*(tau-tau0))
+        gammadiff = (Gamma(1+ex, s.dd*tau) - Gamma(1+ex, s.dd*tau0))
+        return prefactor*(expterm + gamfactor*gammadiff)
+
+    def frad_down_conv(s, tau):    
+        """Downward radiative flux in the convective region, RC eq 14"""    
+        # This is very likely messed up, and is in turn messing up the
+        # computation of the convective flux.  However, it's hard to
+        # see how it's so messed up since the soln satisfies the given
+        # flux constraints.  On the other hand, that includes the
+        # convective flux, which is computed to make the flux
+        # constraints correct.  So...  functions to compute
+        # convection, etc, depend in the correct way on this, which is
+        # messed up.
+
+        if iterable(tau): return array([s.frad_down_conv(the_tau)
+                                  for the_tau in tau])
+        def integrand(xx):
+            return (xx/s.tau0)**ex * exp(-s.dd*(tau-xx))
+        
+        ex = 4*s.beta/s.nn
+        factor = s.dd*sigma_cgs*s.t0_cgs**4
+        term1 = s.frad_down_rad(s.tau_rc)*exp(-s.dd*(tau-s.tau_rc))
+
+        # do the whole integral every time.  Extremely dumb.  Fix this
+        # later.  This is not needed and not typically interesting,
+        # though, so don't worry about it for now.
+        integ, err = scipy.integrate.quad(integrand, s.tau_rc, tau)
+
+        return term1 + factor*integ
+
+    def frad_net_conv(s, tau):
+        return (s.frad_up_conv(tau) - s.frad_down_conv(tau))
+
+    def fconv_up_conv(s, tau):
+        """Upward convective flux in the convective region, RC eq 22"""        
+        return (s.fint_cgs + s.fstar_net(tau) 
+                - s.frad_up_conv(tau) + s.frad_down_conv(tau))
+
+    def temp_conv(s, tau):
+        """Temp profile in convective region, RC eq 11"""
+
+        ex = s.beta/s.nn
+        return s.t0_cgs*(tau/s.tau0)**ex
+
+    def pressure_conv(s, tau):
+        """pressure profile in convective region, RC eq 6"""
+        return s.p0_cgs*(tau/s.tau0)**(1/s.nn)
+
+    def fcheck_conv(s, tau):
+        """Sum of fluxes, should be zero..."""
+        return (s.frad_net_conv(tau) + s.fconv_up_conv(tau) 
+                - s.fint_cgs - s.fstar_net(tau))
+
+    def fcheck_rad(s, tau):
+        """Sum of fluxes, should be zero..."""
+        return s.frad_net_rad(tau) - s.fint_cgs - s.fstar_net(tau)
+
+##############################
+## Radiative region
+
+    def temp_rad(s, tau, relaxed=False):
+        """Temp profile in radiative region, RC eq 18"""
+
+        tau = asarray(tau)
+
+        # take the limit as k->0 by hand
+        term1 = ((1 + s.dd*tau + s.k1/s.dd) if s.k1 < s.kmin
+                 else 1+s.dd/s.k1 + (s.k1/s.dd - s.dd/s.k1)*exp(-s.k1*tau))
+        term2 = ((1 + s.dd*tau + s.k2/s.dd) if s.k2 < s.kmin
+                 else 1+s.dd/s.k2 + (s.k2/s.dd - s.dd/s.k2)*exp(-s.k2*tau))
+        sigt4 = 0.5*(s.f1_cgs*term1 + s.f2_cgs*term2 + s.fint_cgs*(1+s.dd*tau))
+
+        # Make this do something not crazy for negative tau so that it can
+        # go inside an adaptive step integration routine and not flip out.
+        #
+        # might want this, which just flips the sign of the troublesome term.
+        #if relaxed:
+        #    return (abs(sigt4)/sigma_cgs)**0.25
+        # or might want this, which just fixes negative taus to the value at zero
+        # if relaxed and (tau < 0).any():
+        #     val = temp_rad(0, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd, relaxed=False)
+        #     result = (sigt4/sigma_cgs)**0.25
+        #     result[tau<0] = val
+        #     return result
+        # or might want this, which ensure continuous function and first
+        # derivative that goes to a constant positive value at neg tau
+        if relaxed and (tau < 0).any():
+            dtau = 1e-4
+            frac = 0.8  # allowed drop before constant kicks in
+            ff = s.temp_rad(0, relaxed=False)
+            f1 = s.temp_rad(dtau, relaxed=False)
+            fp = (f1-ff)/dtau
+            cc = fp/(ff*(1-frac))
+            bb = fp/cc
+            aa = ff-bb
+
+            if len(tau.shape)==0: # scalar
+                result = (sigt4/sigma_cgs)**0.25
+                result = aa + bb*exp(cc*tau)
+            else:
+                result = (sigt4/sigma_cgs)**0.25
+                result[tau<0] = aa + bb*exp(cc*tau[tau<0])
+
+            return result
+
+        return (sigt4/sigma_cgs)**0.25
+
+    def frad_up_rad(s, tau):
+        """Upward radiative flux in the radiative region, RC eq 19"""
+
+        # take the limit as k->0 by hand
+        term1 = (2+(s.dd-s.k1)*tau if s.k1 < s.kmin
+                 else 1 + s.dd/s.k1 + (1-s.dd/s.k1)*exp(-s.k1*tau))
+        term2 = (2+(s.dd-s.k2)*tau if s.k2 < s.kmin
+                 else 1 + s.dd/s.k2 + (1-s.dd/s.k2)*exp(-s.k2*tau))
+        return 0.5*(s.f1_cgs*term1 + s.f2_cgs*term2 + s.fint_cgs*(2+s.dd*tau))
+
+    def frad_down_rad(s, tau):
+        """Downward radiative flux in the radiative region, RC eq 20"""
+
+        # take the limit as k->0 by hand
+        term1 = ( (s.dd + s.k1)*tau if s.k1 < s.kmin
+                  else 1 + s.dd/s.k1 - (1+s.dd/s.k1)*exp(-s.k1*tau))
+        term2 = ( (s.dd + s.k2)*tau if s.k2 < s.kmin
+                  else 1 + s.dd/s.k2 - (1+s.dd/s.k2)*exp(-s.k2*tau))
+        return 0.5*(s.f1_cgs*term1 + s.f2_cgs*term2 + s.fint_cgs*s.dd*tau)
+
+    def frad_net_rad(s, tau):
+        return (s.frad_up_rad(tau) - s.frad_down_rad(tau))
+
+                
+##############################
+## Apply everywhere
+
+    def fstar_net(s, tau):
+        """Net absorbed stellar flux, RC eq 15"""
+        return s.f1_cgs*exp(-s.k1*tau) + s.f2_cgs*exp(-s.k2*tau)
+
+    def temp(s, tau):
+        result = s.temp_rad(tau)
+        result[tau>s.tau_rc] = s.temp_conv(tau)[tau>s.tau_rc]
+        return result
+    
+    def pressure(s, tau):        
+        # handle scalars
+        if not iterable(tau):
+            if tau > s.tau_rc:
+                return s.pressure_conv(tau)
+            else:
+                return s.pressure_rad([s.tau_rc, tau])[1,0]
+        else:
+            # taus must be in increasing order for the moment
+            tau = asarray(tau)
+            tau_rad = concatenate(([s.tau_rc], tau[tau<s.tau_rc][::-1]))
+            pp_rad = s.pressure_rad(tau_rad)[1:][::-1]
+            pp = s.pressure_conv(tau)
+            pp[tau<s.tau_rc] = pp_rad
+            return pp
+
+
+##############################
+## Model solutions
+
+    def _model(s):
+        """Solve for temperature and flux continuity at the
+        radiative-convective boundary.  This is where the big money is.
+
+        For planets with surfaces, you may want to fix the reference
+        temperature and find the optical depth.  For planets without
+        surfaces I think it makes more sense to fix the reference optical
+        depth and find the temperature there.
+
+        Follow suggestions from DSP and specify fluxes via effective temps."""
+
+        def t0_taurc(xx):
+            return s.temp_rad(xx)*(s.tau0/xx)**(s.beta/s.nn)
+
+        def ff(xx):
+            cnt[0] += 1
+            t0 = t0_taurc(xx)
+            value =  (s.frad_up_conv(xx, t0=t0) - s.frad_up_rad(xx))
+            if s.verbose >= 3: print "Finding root given tau0: ", xx, value/ftot
+            return value/ftot
+
+        cnt = [0] 
+        ftot = s.f1_cgs + s.f2_cgs + s.fint_cgs
+
+        # per DSP's complaint regarding tlusty, try to make this
+        # bulletproof (but don't allow an infinite loop)
+        taul, tauh = 1.0, 1.0
+        while ff(taul) < 0 and 2*taul != taul: taul /= 2.0
+        while ff(tauh) > 0 and 2*tauh != tauh: tauh *= 2.0
+        if s.verbose >=2: print "Starting at", taul, tauh, ff(taul), ff(tauh)
+        tau_rc = scipy.optimize.bisect(ff, taul, tauh, xtol=s.dtau0)
+        if s.verbose >=2: print "Ending at", tau_rc, ff(tau_rc), cnt[0], "iterations"
+
+        # calculate t0_cgs
+        t0_cgs = s.temp_rad(tau_rc)*(s.tau0/tau_rc)**(s.beta/s.nn)
+        return [tau_rc, t0_cgs]
+
+    def _rc_model(s):
+        """Solve for temperature and flux continuity at the
+        radiative-convective boundary.  This is where the big money is.
+
+        Follow RC and make T0 a model parameter, then solve for tau_rc and
+        tau_0.  This is to facilitate comparison with their plots.
+
+        Follow suggestions from DSP and specify fluxes via effective temps."""
+
+        def tau0_taurc(xx):
+            return xx*(s.t0_cgs/s.temp_rad(xx))**(s.nn/s.beta)
+
+        def ff(xx):
+            cnt[0] += 1
+            tau0 = tau0_taurc(xx)
+            value =  s.frad_up_conv(xx, tau0=tau0) - s.frad_up_rad(xx)
+            if s.verbose >= 3: print "Finding root given t0: ", xx, value/ftot
+            return value/ftot
+
+        cnt = [0] 
+        ftot = s.f1_cgs + s.f2_cgs + s.fint_cgs
+
+        # per DSP's complaint, try to make this bulletproof (but don't
+        # allow an infinite loop)
+        taul, tauh = 1.0, 1.0
+        while ff(taul) < 0 and 2*taul != taul: taul /= 2.0
+        while ff(tauh) > 0 and 2*tauh != tauh: tauh *= 2.0
+
+        if s.verbose >=2: print "Starting at", taul, tauh, ff(taul), ff(tauh)
+        tau_rc = scipy.optimize.bisect(ff, taul, tauh, xtol=s.dt0)
+        if s.verbose >=2: print "Ending at", tau_rc, ff(tau_rc), cnt[0], "iterations"
+
+        return [tau_rc, tau0_taurc(tau_rc)]
+
+    def pressure_rad(s, tau):
+        return s._simple_pressure_rad(tau, s.gg_cgs)
+
+    def pressure_rad_hypothetical(s, tau):
+        """Forget about the rad/conv boundary and give what the
+        radiative pressure would be if there were no convection."""
+        # this requires splitting the input array in two b/c of the
+        # requirement that the integration start at the rad/conv
+        # boundary.
+        trad = concatenate(([s.tau_rc], tau[tau<=s.tau_rc][::-1]))
+        tconv = concatenate(([s.tau_rc], tau[tau>s.tau_rc]))
+        prad = s._simple_pressure_rad(trad, s.gg_cgs)[1:][::-1]
+        pconv = s._simple_pressure_rad(tconv, s.gg_cgs)[1:]
+        pp = concatenate((prad, pconv))
+        return pp[:,0]
+    
+    def _simple_pressure_rad(s, taus, gg_cgs):
+        """pressure profile in radiative region.  This is not explicitly
+        computed in RC.  This assumes you already know the surface gravity"""
+        # I don't see how to get this.  I have T(tau), and defn of tau =
+        # int rho kappa dz.  Kappa will depend on rho, temp, and therefore
+        # implicitly tau.  I've introduced a new variable, z.  I can
+        # combine this with HSE to get rid of z.  This gives dp / dtau =
+        # -g / kappa, so basically p ~ tau.  But in more detail I have dp
+        # / dtau = -g / kappa(m_p p / k T(tau), T(tau)).  So if I write
+        # down kappa(rho, T) and I know T(tau) then I have a differential
+        # equation to solve between p and tau.  So I guess that part is
+        # ok.  But I don't know what I should adopt as a boundary
+        # condition as p -> 0 and tau -> 0.  Can I do this from the RC
+        # boundary instead?  Then I have a pressure from the convective
+        # region and an optical depth.  So, ok, I think I've talked myself
+        # through this.      
+        #
+        # So, trying to make this work:
+        #
+        # specify surface gravity gg_cgs, assume to be constant specify
+        # opacity as a function of pressure and temperature.  solve
+        # differential equation dp/dtau = g/kappa(p, t(tau)) with boundary
+        # condition that p(tau_rc) = p_conv(tau_rc), going down into the region of smaller tau.
+        #
+        # The integration _must_ start at the radiative/convective
+        # boundary, so take that to be the first entry in the desired
+        # output points tau.
+        #
+        # Kramer's opacity law => kappa ~ p T^{-9/2}
+        #
+        # Good lord, every day you learn something.  THIS is where surface
+        # gravity enters.  Solving for constant opacity gives simple
+        # expression for p, which you can evaluate at tau=0 and don't
+        # necessarily get zero.  That is, there will be positive (or
+        # negative) pressure at the surface and the planet will expand or
+        # contract to achieve zero pressure at the surface.  For const
+        # opacity you get g = p_rc kappa / tau_rc
+        # 
+        # So the _right_ thing to do is iterate on this, choosing
+        # different surface gravities until you get the correct solution,
+        # p = 0 at tau = 0.  It's a 1d problem and behavior should be
+        # monotonic so shouldn't be too hard to solve this.
+
+        def derivs(yy, tau):
+            pp = yy[0]
+            trad = s.temp_rad(tau, relaxed=True)
+            result = [gg_cgs/s.kappa(pp, trad)]
+            return result
+
+        # don't rely on the user to give a decreasing array of optical
+        # depths, starting at the right value, etc.: give sensible answers
+        # even if they mess up the input.
+        # flip = True if taus[0] < taus[-1] else False
+        # if flip: taus = taus[::-1]
+        
+        assert abs(taus[0]/s.tau_rc - 1) < 1e-4
+
+        p_rc = s.pressure_conv(s.tau_rc)
+        return scipy.integrate.odeint(derivs, [p_rc], taus, hmax=0.1, mxstep=5000)
+
+    def _surface_gravity(s):
+        """find surface gravity by requiring that p=0 at tau=0"""
+        # Should include a special case for kappa = const since that's
+        # what I'm mostly using and it's analytic.
+
+        def ff(xx):
+            result = s._simple_pressure_rad([s.tau_rc, 0], xx)
+            if s.verbose >= 3: print "Finding surface gravity", xx, result[1]
+            return result[1]
+
+        gl, gh = 0.0, 1.0
+        while ff(gh) > 0 and 2*gh != gh: gh *= 2
+        return scipy.optimize.bisect(ff, gl, gh, xtol=s.dgg)
+
 
 def find_pressure(sig, tt_cgs):
     """Find pressure given entropy per baryon and temperature in cgs.
@@ -33,590 +457,72 @@ def find_pressure(sig, tt_cgs):
     nq_cgs = (mp_cgs*kb_cgs*tt_cgs/(2*pi*hbar_cgs**2))**1.5
 
     return kb_cgs*tt_cgs*nq_cgs*exp(2.5-sig)
-
-def frad_up_conv(tau, tau0, t0_cgs, nn, alpha, gamma, dd):
-    """Upward radiative flux in the convective region, RC eq 13"""
-    nn, gamma = float(nn), float(gamma)
-
-    # Gamma from their paper is defined thusly ito scipy functions
-    def Gamma(a,x):
-        return scipy.special.gamma(a)*scipy.special.gammaincc(a,x)
-    beta = alpha*(gamma-1)/gamma
-    ex = 4*beta/nn
-
-    prefactor = sigma_cgs*t0_cgs**4
-    gamfactor = exp(dd*tau)*(dd*tau0)**(-ex)
-    expterm = exp(dd*(tau-tau0))
-    gammadiff = (Gamma(1+ex, dd*tau) - Gamma(1+ex, dd*tau0))
-    return prefactor*(expterm + gamfactor*gammadiff)
-                                    
-def frad_down_conv(tau, tau_rc, tau0, t0_cgs, nn, alpha,
-                   f1_cgs, k1, f2_cgs, k2, fint_cgs, gamma, dd):    
-    """Downward radiative flux in the convective region, RC eq 14"""    
-    # This is very likely messed up, and is in turn messing up the computation of the convective flux.  However, it's hard to see how it's so messed up since the soln satisfies the given flux constraints.  On the other hand, that includes the convective flux, which is computed to make the flux constraints correct.  So...  functions to compute convection, etc, depend in the correct way on this, which is messed up.  
-    nn, tau0 = float(nn), float(tau0)
-    
-    if iterable(tau): return [frad_down_conv(the_tau, tau_rc, tau0, t0_cgs, nn, alpha,
-                                             f1_cgs, k1, f2_cgs, k2, fint_cgs, gamma, dd)
-                              for the_tau in tau]
-    def integrand(xx):
-        return (xx/tau0)**ex * exp(-dd*(tau-xx))
-
-    beta = alpha*(gamma-1)/gamma
-    ex = 4*beta/nn
-    factor = dd*sigma_cgs*t0_cgs**4
-    term1 = frad_down_rad(tau_rc, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd)*exp(-dd*(tau-tau_rc))
-
-    # do the whole integral every time.  Extremely dumb.  Fix this
-    # later.  This is not needed and not typically interesting,
-    # though, so don't worry about it for now.
-    integ, err = scipy.integrate.quad(integrand, tau_rc, tau)
-
-    return term1 + factor*integ
-
-def frad_net_conv(tau, tau_rc, tau0, t0_cgs, nn, alpha, f1_cgs, k1, f2_cgs, k2, fint_cgs, gamma, dd):
-    return (frad_up_conv(tau, tau0, t0_cgs, nn, alpha, gamma, dd) -
-            frad_down_conv(tau, tau_rc, tau0, t0_cgs, nn, alpha, f1_cgs, k1, f2_cgs, k2, fint_cgs, gamma, dd))
-
-def fconv_up_conv(tau, tau_rc, tau0, t0_cgs, nn, alpha, f1_cgs, k1, f2_cgs, k2, fint_cgs, gamma, dd):
-    """Upward convective flux in the convective region, RC eq 22"""        
-    return (fint_cgs
-            + fstar_net(tau, f1_cgs, k1, f2_cgs, k2)
-            - frad_up_conv(tau, tau0, t0_cgs, nn, alpha, gamma, dd) 
-            + frad_down_conv(tau, tau_rc, tau0, t0_cgs, nn, alpha, f1_cgs, k1, f2_cgs, k2, fint_cgs, gamma, dd))
-
-def temp_conv(tau, tau0, t0_cgs, nn, alpha, gamma):
-    """Temp profile in convective region, RC eq 11"""
-    nn, tau0, gamma = float(nn), float(tau0), float(gamma)
-    
-    beta = alpha*(gamma-1)/gamma
-    ex = beta/nn
-    return t0_cgs*(tau/tau0)**ex
-
-def pressure_conv(tau, tau0, sig0, t0_cgs, nn, p0=None):
-    """pressure profile in convective region, RC eq 6"""
-    tau0, nn = float(tau0), float(nn)
-    p0 = p0 or find_pressure(sig0, t0_cgs)        
-    return p0*(tau/tau0)**(1/nn)
-
-def fcheck_conv(tau, tau_rc, tau0, t0_cgs, nn, alpha, f1_cgs, k1, f2_cgs, k2, fint_cgs, gamma, dd):
-    """Sum of fluxes, should be zero..."""
-    return (frad_net_conv(tau, tau_rc, tau0, t0_cgs, nn, alpha, f1_cgs, k1, f2_cgs, k2, fint_cgs, gamma, dd) 
-            + fconv_up_conv(tau, tau_rc, tau0, t0_cgs, nn, alpha, f1_cgs, k1, f2_cgs, k2, fint_cgs, gamma, dd)
-            - fint_cgs
-            - fstar_net(tau, f1_cgs, k1, f2_cgs, k2))
-
-def fcheck_rad(tau, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd):
-    """Sum of fluxes, should be zero..."""
-    return (frad_net_rad(tau, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd) 
-            - fint_cgs
-            - fstar_net(tau, f1_cgs, k1, f2_cgs, k2))
-
-    
-##############################
-## Radiative region
-
-def tst(gg_cgs = 980):
-    tau0 = 100
-    nn = 1
-    alpha = 1
-    t1_cgs = 100
-    k1 = 0
-    t2_cgs = 0
-    k2 = 0
-    tint_cgs = 0
-    gamma = 1.67
-    dd = 1.5
-    kappa_cgs = 0.2
-    
-    sig0=9.0
-
-    f1_cgs, f2_cgs, fint_cgs = [sigma_cgs*tt**4 for tt in t1_cgs, t2_cgs, tint_cgs]
-
-    tau_rc, t0 = model(tau0=tau0, nn=nn, alpha=alpha, 
-                       t1_cgs=t1_cgs, k1=k1, t2_cgs=t2_cgs, k2=k2, tint_cgs=tint_cgs, 
-                       gamma=gamma, dd=dd)
-
-    taus = logspace(log10(tau_rc), -3, 100)
-    result = simple_pressure_rad(taus=taus, 
-                 kappa_cgs=kappa_cgs, gg_cgs=gg_cgs, 
-                 tau0=tau0, sig0=sig0, t0_cgs=t0, nn=nn, 
-                 f1_cgs=f1_cgs, k1=k1, f2_cgs=f2_cgs, k2=k2, fint_cgs=fint_cgs, dd=dd)
-
-    surface_gravity(tau_rc=tau_rc, 
-                 kappa_cgs=kappa_cgs, 
-                 tau0=tau0, sig0=sig0, t0_cgs=t0, nn=nn, 
-                 f1_cgs=f1_cgs, k1=k1, f2_cgs=f2_cgs, k2=k2, fint_cgs=fint_cgs, dd=dd)
-    
-    return taus, result
-
-def surface_gravity(tau_rc, 
-                 kappa_cgs, 
-                 tau0, sig0, t0_cgs, nn, 
-                 f1_cgs, k1, f2_cgs, k2, fint_cgs, dd,
-                 p0=None):
-    """find surface gravity by requiring that p=0 at tau=0"""
-    
-    def ff(xx):
-        result = simple_pressure_rad([tau_rc, 0], 
-                            kappa_cgs, xx, 
-                            tau0, sig0, t0_cgs, nn, 
-                            f1_cgs, k1, f2_cgs, k2, fint_cgs, dd, p0=p0)
-        print "GSN", xx, result[1]
-        return result[1]
-
-    gl, gh = 0.0, 1.0
-    while ff(gh) > 0 and 2*gh != gh: gh *= 2
-    return scipy.optimize.bisect(ff, gl, gh)
-    
-def simple_pressure_rad(taus, 
-                 kappa_cgs, gg_cgs, 
-                 tau0, sig0, t0_cgs, nn, 
-                 f1_cgs, k1, f2_cgs, k2, fint_cgs, dd,
-                 p0=None):
-    """pressure profile in radiative region.  This is not explicitly
-    computed in RC"""
-    # I don't see how to get this.  I have T(tau), and defn of tau =
-    # int rho kappa dz.  Kappa will depend on rho, temp, and therefore
-    # implicitly tau.  I've introduced a new variable, z.  I can
-    # combine this with HSE to get rid of z.  This gives dp / dtau =
-    # -g / kappa, so basically p ~ tau.  But in more detail I have dp
-    # / dtau = -g / kappa(m_p p / k T(tau), T(tau)).  So if I write
-    # down kappa(rho, T) and I know T(tau) then I have a differential
-    # equation to solve between p and tau.  So I guess that part is
-    # ok.  But I don't know what I should adopt as a boundary
-    # condition as p -> 0 and tau -> 0.  Can I do this from the RC
-    # boundary instead?  Then I have a pressure from the convective
-    # region and an optical depth.  So, ok, I think I've talked myself
-    # through this.      
-    #
-    # So, trying to make this work:
-    #
-    # specify surface gravity gg_cgs, assume to be constant specify
-    # opacity as a function of pressure and temperature.  solve
-    # differential equation dp/dtau = g/kappa(p, t(tau)) with boundary
-    # condition that p(tau_rc) = p_conv(tau_rc), going down into the region of smaller tau.
-    #
-    # The integration _must_ start at the radiative/convective
-    # boundary, so take that to be the first entry in the desired
-    # output points tau.
-    #
-    # Kramer's opacity law => kappa ~ p T^{-9/2}
-    #
-    # Good lord, every day you learn something.  THIS is where surface
-    # gravity enters.  Solving for constant opacity gives simple
-    # expression for p, which you can evaluate at tau=0 and don't
-    # necessarily get zero.  That is, there will be positive (or
-    # negative) pressure at the surface and the planet will expand or
-    # contract to achieve zero pressure at the surface.  For const
-    # opacity you get g = p_rc kappa / tau_rc
-    # 
-    # So the _right_ thing to do is iterate on this, choosing
-    # different surface gravities until you get the correct solution,
-    # p = 0 at tau = 0.  It's a 1d problem and behavior should be
-    # monotonic so shouldn't be too hard to solve this.
-
-    def derivs(yy, tau):
-        pp = yy[0]
-        trad = temp_rad(tau, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd, relaxed=True)
-        result = [gg_cgs/kappa_cgs(pp, trad)]
-        return result
-
-    # if user specifies a constant kappa, turn it into a function that
-    # returns something of the correct dimensionality.
-    if not callable(kappa_cgs): 
-        kappa_value = kappa_cgs
-        kappa_cgs = lambda x,y: 0*x + 0*y + kappa_value
-
-    # don't rely on the user to give a decreasing array of optical
-    # depths, starting at the right value, etc.: give sensible answers
-    # even if they mess up the input.
-
-    flip = True if taus[0] < taus[-1] else False
-    if flip: taus = taus[::-1]
-
-    tau_rc = taus[0]
-    p_rc = pressure_conv(tau_rc, tau0, sig0, t0_cgs, nn, p0=p0)    
-    result = scipy.integrate.odeint(derivs, [p_rc], taus, hmax=0.1, mxstep=5000)
-    return result
-
-def temp_rad(tau, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd, relaxed=False):
-    """Temp profile in radiative region, RC eq 18"""
-    k1, k2, dd = float(k1), float(k2), float(dd)
-    tau = asarray(tau)
-
-    # take the limit as k->0 by hand
-    kmin = 1e-3
-    term1 = ((1 + dd*tau + k1/dd) if k1<kmin
-             else 1+dd/k1 + (k1/dd - dd/k1)*exp(-k1*tau))
-    term2 = ((1 + dd*tau + k2/dd) if k2<kmin
-             else 1+dd/k2 + (k2/dd - dd/k2)*exp(-k2*tau))
-    sigt4 = 0.5*(f1_cgs*term1 + f2_cgs*term2 + fint_cgs*(1+dd*tau))
-
-    # Make this do something not crazy for negative tau so that it can
-    # go inside an adaptive step integration routine and not flip out.
-    #
-    # might want this, which just flips the sign of the troublesome term.
-    #if relaxed:
-    #    return (abs(sigt4)/sigma_cgs)**0.25
-    # or might want this, which just fixes negative taus to the value at zero
-    # if relaxed and (tau < 0).any():
-    #     val = temp_rad(0, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd, relaxed=False)
-    #     result = (sigt4/sigma_cgs)**0.25
-    #     result[tau<0] = val
-    #     return result
-    # or might want this, which ensure continuous function and first
-    # derivative that goes to a constant positive value at neg tau
-    if relaxed and (tau < 0).any():
-        dtau = 1e-4
-        ff = temp_rad(0, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd, relaxed=False)
-        f1 = temp_rad(dtau, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd, relaxed=False)
-        fp = (f1-ff)/dtau
-        frac = 0.8  # allowed drop before constant kicks in
-        cc = fp/(ff*(1-frac))
-        bb = fp/cc
-        aa = ff-bb
-        
-        if len(tau.shape)==0: # scalar
-            result = (sigt4/sigma_cgs)**0.25
-            result = aa + bb*exp(cc*tau)
-        else:
-            result = (sigt4/sigma_cgs)**0.25
-            result[tau<0] = aa + bb*exp(cc*tau[tau<0])
-
-        return result
-    
-    return (sigt4/sigma_cgs)**0.25
-
-def frad_up_rad(tau, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd):
-    """Upward radiative flux in the radiative region, RC eq 19"""
-    k1, k2 = float(k1), float(k2)
-    # take the limit as k->0 by hand
-    kmin=1e-3
-    term1 = (2+(dd-k1)*tau if k1 < kmin
-             else 1 + dd/k1 + (1-dd/k1)*exp(-k1*tau))
-    term2 = (2+(dd-k2)*tau if k2 < kmin
-             else 1 + dd/k2 + (1-dd/k2)*exp(-k2*tau))
-    return 0.5*(f1_cgs*term1 + f2_cgs*term2 + fint_cgs*(2+dd*tau))
-
-def frad_down_rad(tau, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd):
-    """Downward radiative flux in the radiative region, RC eq 20"""
-    k1, k2 = float(k1), float(k2)
-    # take the limit as k->0 by hand
-    kmin=1e-3
-    term1 = ( (D + k1)*tau if k1 < kmin
-              else 1 + dd/k1 - (1+dd/k1)*exp(-k1*tau))
-    term2 = ( (D + k2)*tau if k2 < kmin
-              else 1 + dd/k2 - (1+dd/k2)*exp(-k2*tau))
-    return 0.5*(f1_cgs*term1 + f2_cgs*term2 + fint_cgs*dd*tau)
-
-def frad_net_rad(tau, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd):
-    return (frad_up_rad(tau, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd) - 
-            frad_down_rad(tau, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd))
-
-                
-##############################
-## Apply everywhere
-
-def fstar_net(tau, f1_cgs, k1, f2_cgs, k2):
-    """Net absorbed stellar flux, RC eq 15"""
-    return f1_cgs*exp(-k1*tau) + f2_cgs*exp(-k2*tau)
-
-##############################
-## The model
-
-def model_try1(tau0, nn, alpha, t1_cgs, k1, t2_cgs, k2, tint_cgs, gamma, dd):
-    # if you specify tau0 and solve for t0, you can easily reduce the
-    # problem to 1d root finding.  Requiring temp continuity at r/c
-    # border gives sigma t0^4 = sigma t_rad^4(tau_rc)
-    # (tau0/tau_rc)^(4beta/n).  Then I can solve for flux continuity
-    # by dividing out by t0^4 (for whatever value I used) and
-    # inserting the above expression.  The result only depends on
-    # tau_rc, and it saves me from manipulating the expressions more
-    # than I have to.  Flux continuity is then f_conv_up(tau_rc, t_0)
-    # (tau_0/tau_rc)^(4beta/n) (t_rad^4 / t_0^4) - f_rad_up(tau_rc) = 0
-    #
-    # This doesn't work if you specify T0 b/c the dependence of
-    # f_conv on t0 is more complicated.  It's still possible to do the
-    # reduction of dimensionality but you have to break apart the
-    # expressions for temp and flux.
-
-    def ff(xx):
-        cnt[0] += 1
-        value = (frad_up_conv(xx, tau0, t0_dummy, nn, alpha, gamma, dd) *
-                 (tau0/xx)**(4*beta/nn) *
-                 (temp_rad(xx, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd) / t0_dummy)**4 -
-                 frad_up_rad(xx, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd))
-        return value/ftot
-        
-    # This value shouldn't matter
-    t0_dummy = 100.0
-
-    nn,gamma = float(nn), float(gamma)    
-    verbose = False
-    cnt = [0] 
-    f1_cgs, f2_cgs, fint_cgs = [sigma_cgs*tt**4 for tt in t1_cgs, t2_cgs, tint_cgs]
-    ftot = f1_cgs + f2_cgs + fint_cgs
-    beta = alpha*(gamma-1)/gamma
-
-    # per DSP's complaint, try to make this bulletproof (but don't
-    # allow an infinite loop)
-    taul, tauh = 1.0, 1.0
-    while ff(taul) < 0 and 2*taul != taul: taul /= 2.0
-    while ff(tauh) > 0 and 2*tauh != tauh: tauh *= 2.0
-    if verbose: print "Starting at", taul, tauh, ff(taul), ff(tauh)
-    tau_rc = scipy.optimize.bisect(ff, taul, tauh)
-    if verbose: print "Ending at", tau_rc, ff(tau_rc), cnt[0], "iterations"
-
-    # calculate t0_cgs
-    t0_cgs = temp_rad(tau_rc, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd)*(tau0/tau_rc)**(beta/nn)
-    return [tau_rc, t0_cgs]
-
-def model(tau0, nn, alpha, t1_cgs, k1, t2_cgs, k2, tint_cgs, gamma, dd):
-    """Solve for temperature and flux continuity at the
-    radiative-convective boundary.  This is where the big money is.
-
-    For planets with surfaces, you may want to fix the reference
-    temperature and find the optical depth.  For planets without
-    surfaces I think it makes more sense to fix the reference optical
-    depth and find the temperature there.
-
-    Follow suggestions from DSP and specify fluxes via effective temps."""
-
-    def t0_taurc(xx):
-        return temp_rad(xx, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd)*(tau0/xx)**(beta/nn)
-
-    def ff(xx):
-        cnt[0] += 1
-        t0_cgs = t0_taurc(xx)
-        value =  (frad_up_conv(xx, tau0, t0_cgs, nn, alpha, gamma, dd)
-                  - frad_up_rad(xx, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd))
-        return value/ftot
-        
-    nn,gamma = float(nn), float(gamma)    
-    verbose = False    
-    cnt = [0] 
-    f1_cgs, f2_cgs, fint_cgs = [sigma_cgs*tt**4 for tt in t1_cgs, t2_cgs, tint_cgs]
-    ftot = f1_cgs + f2_cgs + fint_cgs
-    beta = alpha*(gamma-1)/gamma
-
-    # per DSP's complaint, try to make this bulletproof (but don't
-    # allow an infinite loop)
-    taul, tauh = 1.0, 1.0
-    while ff(taul) < 0 and 2*taul != taul: taul /= 2.0
-    while ff(tauh) > 0 and 2*tauh != tauh: tauh *= 2.0
-    if verbose: print "Starting at", taul, tauh, ff(taul), ff(tauh)
-    tau_rc = scipy.optimize.bisect(ff, taul, tauh)
-    if verbose: print "Ending at", tau_rc, ff(tau_rc), cnt[0], "iterations"
-
-    # calculate t0_cgs
-    t0_cgs = temp_rad(tau_rc, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd)*(tau0/tau_rc)**(beta/nn)
-    return [tau_rc, t0_cgs]
-
-def rc_model(t0_cgs, nn, alpha, t1_cgs, k1, t2_cgs, k2, tint_cgs, gamma, dd):
-    """Solve for temperature and flux continuity at the
-    radiative-convective boundary.  This is where the big money is.
-
-    Follow RC and make T0 a model parameter, then solve for tau_rc and
-    tau_0.  This is to facilitate comparison with their plots.
-    
-    Follow suggestions from DSP and specify fluxes via effective temps."""
-
-    def tau0_taurc(xx):
-        return xx*(t0_cgs/temp_rad(xx, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd))**(nn/beta)
-
-    def ff(xx):
-        cnt[0] += 1
-        tau0 = tau0_taurc(xx)
-        value =  (frad_up_conv(xx, tau0, t0_cgs, nn, alpha, gamma, dd)
-                  - frad_up_rad(xx, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd))
-        return value/ftot
-
-    verbose = False    
-    cnt = [0] 
-    f1_cgs, f2_cgs, fint_cgs = [sigma_cgs*tt**4 for tt in t1_cgs, t2_cgs, tint_cgs]
-    ftot = f1_cgs + f2_cgs + fint_cgs
-    beta = alpha*(gamma-1)/gamma
-
-    # per DSP's complaint, try to make this bulletproof (but don't
-    # allow an infinite loop)
-    taul, tauh = 1.0, 1.0
-    while ff(taul) < 0 and 2*taul != taul: taul /= 2.0
-    while ff(tauh) > 0 and 2*tauh != tauh: tauh *= 2.0
-    if verbose: print "Starting at", taul, tauh, ff(taul), ff(tauh)
-    tau_rc = scipy.optimize.bisect(ff, taul, tauh)
-    if verbose: print "Ending at", tau_rc, ff(tau_rc), cnt[0], "iterations"
-
-    return [tau_rc, tau0_taurc(tau_rc)]
-    
-# # one model that converges:
-# # model(tau0=50, nn=1, alpha=1, f1_cgs=10, k1=1, f2_cgs=0, k2=1, fint_cgs=10, gamma=1.67, dd=1.5)
-# # model(tau0=50, nn=1, alpha=1, t1_cgs=20, k1=1, t2_cgs=0, k2=1, tint_cgs=20, gamma=1.67, dd=1.5)
-# def model_2d(tau0, nn, alpha, t1_cgs, k1, t2_cgs, k2, tint_cgs, gamma, dd):
-#     """Solve for temperature and flux continuity at the
-#     radiative-convective boundary.  This is where the big money is.
-
-#     For planets with surfaces, you may want to fix the reference
-#     temperature and find the optical depth.  For planets without
-#     surfaces I think it makes more sense to fix the reference optical
-#     depth and find the temperature there.
-
-#     Follow suggestions from DSP and specify fluxes via effective temps."""
-#     def ff(xx):
-#         cnt[0] += 1
-#         tau_rc, t0_cgs = xx
-#         tdiff = (temp_conv(tau_rc, tau0, t0_cgs, nn, alpha, gamma) -
-#                  temp_rad(tau_rc, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd))
-#         frad_diff = (frad_up_conv(tau_rc, tau0, t0_cgs, nn, alpha, gamma, dd) -
-#                      frad_up_rad(tau_rc, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd))
-#         return [tdiff/tscale, frad_diff/ftot]
-
-#     verbose=True
-#     gamma = float(gamma)
-#     cnt = [0] 
-
-#     f1_cgs, f2_cgs, fint_cgs = [sigma_cgs*tt**4 for tt in t1_cgs, t2_cgs, tint_cgs]
-#     ftot = f1_cgs + f2_cgs + fint_cgs
-#     tscale = (ftot/sigma_cgs)**0.25
-
-#     # Should we set T_0 using all of the flux or only the internal flux?
-#     beta = alpha*(gamma-1)/gamma
-#     x0 = [1.0, 100]
-#     x0 = [1.0, ( ftot/sigma_cgs)**0.25 * tau0**(beta/nn)]
-#     #x0 = [1.0, (fint_cgs/sigma_cgs)**0.25 * tau0**(beta/nn)]
-#     if verbose: print "Starting at", x0, ff(x0)
-#     result = scipy.optimize.newton_krylov(ff, x0, f_tol=0.05)
-#     if verbose: print "Ending at", result, ff(result), cnt[0], "iterations"
-#     return result 
-
-# def rc_model_2d(t0_cgs, nn, alpha, t1_cgs, k1, t2_cgs, k2, tint_cgs, gamma, dd):
-#     """Solve for temperature and flux continuity at the
-#     radiative-convective boundary.  This is where the big money is.
-
-#     Follow RC and make T0 a model parameter, then solve for tau_rc and
-#     tau_0.  This is to facilitate comparison with their plots.
-
-#     It also seems at first glance that this is _much_ easier to get to
-#     converge.
-    
-#     Follow suggestions from DSP and specify fluxes via effective temps."""
-
-#     def ff(xx):
-#         cnt[0] += 1
-#         tau_rc, tau0 = xx
-#         tdiff = (temp_conv(tau_rc, tau0, t0_cgs, nn, alpha, gamma) -
-#                  temp_rad(tau_rc, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd))
-#         frad_diff = (frad_up_conv(tau_rc, tau0, t0_cgs, nn, alpha, gamma, dd) -
-#                      frad_up_rad(tau_rc, f1_cgs, k1, f2_cgs, k2, fint_cgs, dd))
-#         return [tdiff/tscale, frad_diff/ftot]
-
-#     verbose=True
-#     gamma = float(gamma)
-#     cnt = [0]
-
-#     f1_cgs, f2_cgs, fint_cgs = [sigma_cgs*tt**4 for tt in t1_cgs, t2_cgs, tint_cgs]
-#     ftot = f1_cgs + f2_cgs + fint_cgs
-#     tscale = (ftot/sigma_cgs)**0.25
-
-#     beta = alpha*(gamma-1)/gamma
-#     x0 = [1.0, 1.0]
-
-#     if verbose: print "Starting at", x0, ff(x0)
-#     result = scipy.optimize.newton_krylov(ff, x0, f_tol=0.05)
-#     if verbose: print "Ending at", result, ff(result), cnt[0], "iterations"
-#     return result 
-
-# make sure tau doesn't go larger than tau0
-# tau=logspace(-2,1.6,100) 
-# model(tau0=50, nn=1, alpha=1, f1_cgs=10, k1=1, f2_cgs=0, k2=1, fint_cgs=10, gamma=1.67, dd=1.5)
-# plots(tau, tau0=50.0, sig0=9.0, nn=1.0, alpha=1.0, f1_cgs=10.0, k1=1.0, f2_cgs=0.0, k2=1.0, fint_cgs=10.0, gamma=1.67, dd=1.5, p0=None)
-def plots(tau, tau0, sig0, nn, alpha, t1_cgs, k1, t2_cgs, k2, tint_cgs, gamma, dd, p0=None, t0_cgs=None):
-
-    # if t0_cgs is specified, use it and solve for tau0 (ignoring the
-    # value given).  If not, use tau0 and solve for t0_cgs.  This
-    # allows you to specify the model differently and the rest of the
-    # plotting stuff still works.  In principle maybe I shouldn't be
-    # passing all these parameters around, but should define a "model"
-    # in a more generic fashion which is then passed to the plotting
-    # routine.
-    if t0_cgs:
-        tau_rc, tau0 = rc_model(t0_cgs, nn, alpha, t1_cgs, k1, t2_cgs, k2, tint_cgs, gamma, dd)
-    else:
-        tau_rc, t0_cgs = model(tau0, nn, alpha, t1_cgs, k1, t2_cgs, k2, tint_cgs, gamma, dd)
-
-    print tau_rc, t0_cgs, tau0
-    #tau_rc, t0_cgs = 4.36210102405, 78.4106542356
-    print tau_rc, t0_cgs, tau0
-
-    pl.clf()
+                                            
+def plot_model(tau, mm, pressure=False):
 
     def flux_marks():
         # mark rad/conv boundary
-        pl.semilogy([-100, 100], [tau_rc, tau_rc], 'k')    
+        pl.semilogy([-100, 100], [rc_bnd, rc_bnd], 'k')    
         # mark zero
-        pl.semilogy([0, 0], [tau[0], tau[-1]], 'k')
+        pl.semilogy([0, 0], [yy[0], yy[-1]], 'k')
         pl.xlim(-50,100)
 
     def temp_marks():
         # mark rad/conv boundary
-        pl.loglog([1, 100], [tau_rc, tau_rc], 'k')    
+        pl.loglog([1, 100], [rc_bnd, rc_bnd], 'k')    
 
     def flux_to_temp(xx):
         xx = asarray(xx)
         return sign(xx)*(abs(xx)/sigma_cgs)**0.25
-    
+
+    if pressure:
+        yy = mm.pressure(tau)
+        rc_bnd = mm.pressure(mm.tau_rc)
+    else:
+        yy = tau
+        rc_bnd = mm.tau_rc
+
+    pl.clf()
+
     pl.subplot(2,2,1)
-    pl.semilogy(flux_to_temp(frad_up_rad(tau, t1_cgs, k1, t2_cgs, k2, tint_cgs, dd)), tau, 'b:')
-    pl.semilogy(flux_to_temp(frad_down_rad(tau, t1_cgs, k1, t2_cgs, k2, tint_cgs, dd)), tau, 'b--')
-    pl.semilogy(flux_to_temp(frad_net_rad(tau, t1_cgs, k1, t2_cgs, k2, tint_cgs, dd)), tau, 'b')
-    pl.ylim(tau[-1], tau[0])
+    pl.semilogy(flux_to_temp(mm.frad_up_rad(tau)), yy, 'b:')
+    pl.semilogy(flux_to_temp(mm.frad_down_rad(tau)), yy, 'b--')
+    pl.semilogy(flux_to_temp(mm.frad_net_rad(tau)), yy, 'b')
+    pl.ylim(yy[-1], yy[0])
     pl.legend(('up', 'down', 'net'), loc='upper left')
     pl.title('Rad teff in rad zone')
-    pl.semilogy(flux_to_temp(fstar_net(tau, t1_cgs, k1, t2_cgs, k2)), tau, 'g')
+    pl.semilogy(flux_to_temp(mm.fstar_net(tau)), yy, 'g')
     flux_marks()
 
     pl.subplot(2,2,2)
-    pl.semilogy(flux_to_temp(frad_up_conv(tau, tau0, t0_cgs, nn, alpha, gamma, dd)), tau, 'r:')
-    pl.semilogy(flux_to_temp(frad_down_conv(tau, tau_rc, tau0, t0_cgs, nn, alpha, t1_cgs, k1, t2_cgs, k2,
-                                   tint_cgs, gamma, dd)), tau, 'r--')
-    pl.semilogy(flux_to_temp(frad_net_conv(tau, tau_rc, tau0, t0_cgs, nn, alpha, t1_cgs, k1, t2_cgs, k2,
-                                   tint_cgs, gamma, dd)), tau, 'r')
-    pl.ylim(tau[-1], tau[0])
+    pl.semilogy(flux_to_temp(mm.frad_up_conv(tau)), yy, 'r:')
+    pl.semilogy(flux_to_temp(mm.frad_down_conv(tau)), yy, 'r--')
+    pl.semilogy(flux_to_temp(mm.frad_net_conv(tau)), yy, 'r')
+    pl.ylim(yy[-1], yy[0])
     pl.legend(('up', 'down', 'net'), loc='upper left')
     pl.title('Rad teff in conv zone')
-    pl.semilogy(flux_to_temp(fstar_net(tau, t1_cgs, k1, t2_cgs, k2)), tau, 'g')
+    pl.semilogy(flux_to_temp(mm.fstar_net(tau)), yy, 'g')
     flux_marks()
     
     pl.subplot(2,2,3)
     pl.title('Net teff')
-    pl.semilogy(flux_to_temp(fstar_net(tau, t1_cgs, k1, t2_cgs, k2)), tau, 'g')
-    pl.semilogy(flux_to_temp(frad_net_rad(tau, t1_cgs, k1, t2_cgs, k2, tint_cgs, dd)), tau, 'b')
-    pl.semilogy(flux_to_temp(frad_net_conv(tau, tau_rc, tau0, t0_cgs, nn, alpha, t1_cgs, k1, t2_cgs, k2,
-                                   tint_cgs, gamma, dd)), tau, 'r')
-    pl.semilogy(flux_to_temp(fconv_up_conv(tau, tau_rc, tau0, t0_cgs, nn, alpha, t1_cgs, k1,
-                                   t2_cgs, k2, tint_cgs, gamma, dd)), tau, 'm')
+    pl.semilogy(flux_to_temp(mm.fstar_net(tau)), yy, 'g')
+    pl.semilogy(flux_to_temp(mm.frad_net_rad(tau)), yy, 'b')
+    pl.semilogy(flux_to_temp(mm.frad_net_conv(tau)), yy, 'r')
+    pl.semilogy(flux_to_temp(mm.fconv_up_conv(tau)), yy, 'm')
     pl.legend(('Star', 'Rad (rad)', 'Rad (conv)', 'Conv'), loc='upper left')
-    pl.ylim(tau[-1], tau[0])
+    pl.ylim(yy[-1], yy[0])
     flux_marks()
 
     pl.subplot(2,2,4)
-    pl.loglog(temp_rad(tau, t1_cgs, k1, t2_cgs, k2, tint_cgs, dd), tau, 'b')
-    pl.loglog(temp_conv(tau, tau0, t0_cgs, nn, alpha, gamma), tau, 'r')
+    pl.loglog(mm.temp_rad(tau), yy, 'b')
+    pl.loglog(mm.temp_conv(tau), yy, 'r')
     pl.legend(('Rad', 'Conv'), loc='lower left')
     pl.title('Temperature')
-    pl.ylim(tau[-1], tau[0])
+    pl.ylim(yy[-1], yy[0])
     temp_marks()
 
     pl.draw()
-
-def plots_check(tau, tau0, sig0, nn, alpha, t1_cgs, k1, t2_cgs, k2, tint_cgs, gamma, dd, p0=None):    
-    """Plot total fluxes.  Should be zero..."""
-    tau_rc, t0_cgs = model(tau0, nn, alpha, t1_cgs, k1, t2_cgs, k2, tint_cgs, gamma, dd)
-    pl.clf()
-    pl.semilogx(tau, fcheck_rad(tau, t1_cgs, k1, t2_cgs, k2, tint_cgs, dd), 'b')
-    pl.semilogx(tau, fcheck_conv(tau, tau_rc, tau0, t0_cgs, nn, alpha, t1_cgs, k1, t2_cgs, k2, tint_cgs, gamma, dd), 'r')
-    pl.semilogx([tau_rc, tau_rc], [-20, 20], 'k')    
-    pl.legend(('rad zone','conv zone'))
 
 def fig1():
     # Their fig 1.  I have no doubt that they plotted the function
@@ -652,9 +558,10 @@ def fig1():
         row = [] 
         for tau0 in tau0s:
             alpha = fbon*nn*gamma/(4.0*(gamma-1))
-            trc, t0_cgs = model(tau0, nn=nn, alpha=alpha, t1_cgs=teff, k1=0,
-                                t2_cgs=0, k2=0, tint_cgs=0, gamma=gamma, dd=dd)
-            row.append(trc)
+            mm = Planet(teff, t1_cgs=0, t2_cgs=0, k1=0, k2=0, 
+                        tau0=tau0, nn=nn, alpha=alpha, gamma=gamma, dd=dd)
+
+            row.append(mm.tau_rc)
         result.append(row)
 
     levels = array([0.01, .1, 0.5, 1.0, 2.0])/dd
@@ -679,49 +586,383 @@ def fig2():
 
     result = [] 
     for fbon in fbons:
-        alpha = fbon*nn*gamma/(4.0*(gamma-1))
-        trc, t0_cgs = model(tau0, nn=nn, alpha=alpha, t1_cgs=teff, k1=0,
-                            t2_cgs=0, k2=0, tint_cgs=0, gamma=gamma, dd=dd)
-        result.append(trc)
+        alpha = fbon*nn*gamma/(4.0*(gamma-1))        
+        mm = Planet(teff, t1_cgs=0, t2_cgs=0, k1=0, k2=0, tau0=tau0, nn=nn, alpha=alpha, gamma=gamma, dd=dd)
+        result.append(mm.tau_rc)
     result = asarray(result)
 
     pl.semilogy(fbons, dd*result)
     pl.ylim(20, 0.01)
     pl.draw()
 
-def fig10():
-    f1_mks = 1.3
-    f2_mks = 7.0
-    fi_mks = 5.0
-    t1_cgs = ((1e3*f1_mks/sigma_cgs))**0.25
-    t2_cgs = ((1e3*f2_mks/sigma_cgs))**0.25
-    ti_cgs = ((1e3*fi_mks/sigma_cgs))**0.25
-    print t1_cgs, t2_cgs, ti_cgs
+def fig3():
+    # This looks grossly like their plot, but not quantitatively the
+    # same.  There are some parameters that they didn't specify,
+    # though.
 
-    # params
-    alpha = 0.85
-    k1 = 100
-    k2 = 0.06
-    gamma = 7/5.0
-    # can't find where they specify nn
-    dd = 1.5
-    nn=1.0
-    tau0 = 1e5
-    tau_rc, t0_cgs = model(tau0, nn=nn, alpha=alpha, t1_cgs=t1_cgs, k1=k1,
-                           t2_cgs=t2_cgs, k2=k2, tint_cgs=ti_cgs, gamma=gamma, dd=dd)
+    # their plot actually shows the radiative temp only, I include the
+    # overall temp as dotted lines.
+    
+    nn=2
+    gamma=1.4
+    tint=0
+    tau0=2
+    
+    # They do not seem to appreciate that tau_rc = tau_0 when you have
+    # no internal energy source.  On the other hand, maybe they're
+    # thinking of terrestrial planets w/ a surface.
+    
+    # Value shouldn't matter?
+    t1=1000
+    p0 = 1e6
+    dd=1.0  # actually this one does matter
+    taus = logspace(-2,2,100)
 
-
-    print tau_rc
+    # value unspecified in paper?
+    alpha = 1.0  # this makes a difference
+    kappa = 0.2
+    
     pl.clf()
-    tau = logspace(-3,5,100)
-    pl.semilogy(temp_rad(tau, t1_cgs, k1, t2_cgs, k2, ti_cgs, dd), tau, 'b')
-    pl.semilogy(temp_conv(tau, tau0, t0_cgs, nn, alpha, gamma), tau, 'r')
-    pl.legend(('Rad', 'Conv'), loc='lower left')
-    pl.title('Temperature')
-    pl.ylim(tau[-1], tau[0])
-    pl.xlim(10,200)
-    pl.plot([10, 1000], [tau_rc, tau_rc], 'k')    
+
+    cols = ['b', 'r', 'g', 'k']
+    kods = [0, 0.1, 0.5, 10]
+    cols = ['k']
+    kods = [10]
+    
+    for kod,cc in zip(kods, cols):
+        kk = dd*kod
+
+        mm = Planet(tint_cgs=tint, t1_cgs=t1, k1=kk, tau0=tau0, p0_cgs=p0, nn=nn,
+                    alpha=alpha, gamma=gamma, dd=dd, kappa_cgs=kappa, gravity=True)
+        xx = (mm.temp_rad(taus)/t1)**4
+        xx2 = (mm.temp(taus)/t1)**4
+        yy = mm.pressure(taus)/p0
+        pl.loglog(xx,yy, c=cc)
+        pl.loglog(xx2,yy, c=cc, ls=':')
+
+    pl.xlim(0.4, 10)
+    pl.ylim(2, 0.1)
+    pl.draw()
+    
+def fig4():
+    # Looks good but I only get n=1
+    
+    # shouldn't matter?
+    tint=0
+    dd = 2.0
+    t1 = 10
+    tau0=2
+    p0=1e4
+    gamma = 1.2
+    kappa = 2.0
+    alpha = 3.0
+    
+    kods = logspace(-3,-0.01,4)
+    nns = [1,2,4]
+    
+    taus = logspace(-2,2,100)
+
+    pl.clf()
+    
+    for nn in nns:        
+        result = []
+        for kod in kods:
+            kk = kod*dd
+            mm = Planet(tint_cgs=tint, k1=kk, nn=nn,
+                        t1_cgs=t1, tau0=tau0, t0_cgs=None, p0_cgs=p0,
+                        alpha=alpha, gamma=gamma, dd=dd, kappa_cgs=kappa, gravity=True)
+            # I think I'm supposed to just find the pressure if it
+            # were radiative, to find out if the region is convective
+            # or not.
+            tt = mm.temp_rad(taus)
+            pp = mm.pressure_rad_hypothetical(taus)
+            log_deriv = diff(log(tt))/diff(log(pp))
+            result.append(log_deriv.max())
+        pl.semilogx(kods, result)
+        print result
         
+    pl.ylim(0,0.4)
+    pl.draw()
+
+def fig5(fbon):
+    """fbon = 0.46 for upper panel, 0.57 for lower panel"""
+
+    # value shouldn't matter?
+    t1 = 1000
+    alpha = 1.0
+    gamma = 1.4
+    dd = 1.5
+
+    # axes
+    kods = logspace(-3,-0.01,30)
+    dtau0s = logspace(-1,1,30)
+    levels = [0.05, 0.1, 0.2, 0.4, 1.0, 5.0]
+    
+    # specified
+    tint=0
+    nn=2
+    alpha = fbon*nn*gamma/((gamma-1)*4)
+    
+    result = []
+    for kod in kods:
+        kk = kod*dd
+        row = [] 
+        for dtau0 in dtau0s:
+            tau0 = dtau0/dd
+            mm = Planet(tint_cgs=tint, t1_cgs=t1, k1=kk, tau0=tau0,
+                        nn=nn, alpha=alpha, gamma=gamma, dd=dd)
+            row.append(dd*mm.tau_rc)
+        result.append(row)
+
+    X,Y = structure.make_grid(kods, dtau0s)
+    pl.clf()
+    pl.contour(X,Y,result, levels)
+    pl.gca().set_xscale('log')
+    pl.gca().set_yscale('log')
+    pl.ylim(10, 0.1)
+    pl.draw()
+    
+def fig6():
+
+    # Shouldn't matter?
+    kappa = 0.2
+    ti = 100
+    p0 = 1e6
+    dd = 1.5
+    gamma = 1.4
+    alpha = 1
+    tau0 = 10
+    tau = logspace(-2,3,100)
+    
+    # Specified
+    t1 = 10*ti
+    nn = 2
+    kods = [0.1, 2]
+
+    pl.clf()
+    for kod in kods:
+        kk = kod*dd
+        mm = Planet(ti, t1_cgs=t1, k1=kk, tau0=tau0, p0_cgs=p0, nn=nn,
+                    alpha=alpha, gamma=gamma, dd=dd, kappa_cgs=kappa, gravity=True)
+        xx = (mm.temp(tau)/t1)**4
+        yy = mm.pressure(tau)/p0
+        #yy = mm.pressure_rad_hypothetical(tau)/p0
+        pl.loglog(xx,yy)
+        
+    pl.ylim(1e3,0.1)
+    pl.ylim(1e3,0.001)
+    pl.xlim(0.3,200)
+    pl.draw()
+
+def fig7():
+    # axes
+    kods = logspace(-1, 1, 4)
+    fratios = logspace(-1, 5, 5)
+    tau = logspace(0,4,30)
+    levels = [2,10,1e2,1e3,1e4,1e5]
+
+    # shouldn't matter
+    tint = 100
+    gamma = 1.4
+    tau0 = 10
+    p0 = 1e6
+    alpha = 1
+    dd = 1.5
+    kappa = 0.2
+    
+    # specified
+    nn=2
+
+    avetau = ave(tau)
+    
+    result = [] 
+    for kod in kods:
+        kk = kod*dd
+        row = []
+        for fratio in fratios:
+            t1 = tint*fratio**0.25
+            mm = Planet(tint_cgs=tint, t1_cgs=t1, k1=kk, tau0=tau0, sig0=None, p0_cgs=p0,
+                        nn=nn, alpha=alpha, gamma=gamma, dd=dd, kappa_cgs=kappa, gravity=True)
+            tt = mm.temp_rad(tau)
+            pp = mm.pressure_rad_hypothetical(tau)
+            limit = (gamma-1)/gamma
+            lderiv = diff(log(tt))/diff(log(pp))
+            idx = lderiv.searchsorted(limit)
+            if idx != len(avetau):
+                row.append(dd*avetau[idx])
+            else:
+                row.append(dd*tau[-1])
+            
+        result.append(row)
+        
+    print result
+    X,Y = structure.make_grid(kods, fratios)
+
+    pl.clf()
+    pl.contour(X,Y,result,levels)
+    pl.gca().set_xscale('log')
+    pl.gca().set_yscale('log')
+    pl.xlim(0.1, 10)
+    pl.ylim(1e5, 0.1)
+    pl.draw()
+    
+def fig8_9():
+    t1 = (160*1e3/sigma_cgs)**0.25
+
+    # unspecified
+    dd=1.5
+    kappa=0.2
+    
+    common = dict(tint_cgs=0, t1_cgs=t1, k1=0, t0_cgs=730, p0_cgs=92*1e6, alpha=0.8,
+                  gamma=1.3, dd=dd, kappa_cgs=kappa, gravity=True)
+
+    m1 = Planet(nn=1, **common)
+    m2 = Planet(nn=2, **common)
+
+    print "Model 1", m1.tau_rc, m1.tau0
+    print "Model 2", m2.tau_rc, m2.tau0
+    
+    pl.figure(1)
+    pl.clf()
+    tau1 = logspace(-2, 3, 100)
+    tau2 = logspace(-2, 5, 100)
+    pl.semilogy(m1.temp(tau1), 1e-6*m1.pressure(tau1))
+    pl.semilogy(m2.temp(tau2), 1e-6*m2.pressure(tau2))
+    pl.ylim(1e2, 1e-2)
+    pl.xlim(150, 800)
+    pl.draw()
+
+    pl.figure(2)
+    pl.clf()
+
+    pp = 1e-6*m1.pressure(tau1)
+    # red for stuff in the convective zone
+    # blue for stuff in the radiative zone
+    # solid for flux up
+    # dashed for flux down
+    # dotted for temperature
+    pl.semilogy(1e-3*sigma_cgs*m1.temp_conv(tau1)**4, pp, 'r:')    
+    pl.semilogy(1e-3*sigma_cgs*m1.temp_rad(tau1)**4, pp, 'b:')
+    pl.semilogy(1e-3*m1.frad_down_conv(tau1), pp, 'r--')
+    pl.semilogy(1e-3*m1.frad_up_conv(tau1), pp, 'r')
+    pl.semilogy(1e-3*m1.frad_up_rad(tau1), pp, 'b-')
+    pl.semilogy(1e-3*m1.frad_down_rad(tau1), pp, 'b--')
+
+    p_rc = 1e-6*m1.pressure(m1.tau_rc)
+    pl.plot([0, 800], [p_rc, p_rc], 'k')
+    pl.xlim(0, 800)
+    pl.ylim(2, 0.01)
+    pl.draw()
+
+def fig10_11():
+    # not specified
+    kappa = 1.0
+    dd = 1.5
+
+    def to_temp(xx):
+        return (xx*1e3/sigma_cgs)**0.25
+
+    common = dict(tint_cgs=to_temp(5.4), p0_cgs=1.1*1e6, nn=2, alpha=0.85, gamma=1.4, dd=dd, kappa_cgs=kappa, gravity=True)
+    m1 = Planet(t1_cgs=0, k1=0, t2_cgs=to_temp(8.3), k2=0, t0_cgs=165, **common)
+    m2 = Planet(t1_cgs=0, k1=0, t2_cgs=to_temp(8.3), k2=0, t0_cgs=168, **common)
+    m3 = Planet(t1_cgs=to_temp(1.3), k1=100, t2_cgs=to_temp(7.0), k2=0.06, t0_cgs=191, **common)
+    
+    print "Model 1", m1.tau_rc, m1.tau0
+    print "Model 2", m2.tau_rc, m2.tau0
+    print "Model 3", m3.tau_rc, m3.tau0
+
+    pl.figure(1)
+    pl.clf()
+    tau = logspace(-3, 2, 100)
+    pl.semilogy(m1.temp(tau), 1e-6*m1.pressure(tau))
+    pl.semilogy(m2.temp(tau), 1e-6*m2.pressure(tau))
+    pl.semilogy(m3.temp(tau), 1e-6*m3.pressure(tau))
+    pl.ylim(1e0, 1e-3)
+    pl.xlim(100, 200)
+    pl.draw()
+
+    pl.figure(2)
+    pl.clf()
+
+    pp = 1e-6*m1.pressure(tau)
+    # red for stuff in the convective zone
+    # blue for stuff in the radiative zone
+    # solid for flux up
+    # dashed for flux down
+    # dotted for temperature
+    pl.semilogy(1e-3*sigma_cgs*m1.temp_conv(tau)**4, pp, 'r:')    
+    pl.semilogy(1e-3*sigma_cgs*m1.temp_rad(tau)**4, pp, 'b:')
+    pl.semilogy(1e-3*m1.frad_down_conv(tau), pp, 'r--')
+    pl.semilogy(1e-3*m1.frad_up_conv(tau), pp, 'r')
+    pl.semilogy(1e-3*m1.frad_up_rad(tau), pp, 'b-')
+    pl.semilogy(1e-3*m1.frad_down_rad(tau), pp, 'b--')
+
+    pl.semilogy(1e-3*m1.fstar_net(tau), pp, 'g')
+    pl.semilogy(1e-3*m1.fconv_up_conv(tau), pp, 'm')
+
+    # cyan lines are net fluxes, solid applies in radiative zone,
+    # dashed applies in convective zone.
+    pl.semilogy(1e-3*m1.frad_net_rad(tau), pp, 'c')
+    pl.semilogy(1e-3*m1.frad_net_conv(tau), pp, 'c--')
+                
+    p_rc = 1e-6*m1.pressure(m1.tau_rc)
+    pl.plot([0,20], [p_rc, p_rc], 'k')
+    pl.xlim(0, 20)
+    pl.ylim(1, 0.001)
+    pl.draw()
+    
+
+def fig12_13():
+
+    def to_temp(xx):
+        return (xx*1e3/sigma_cgs)**0.25
+
+    # didn't specify
+    dd = 1.5
+    kappa = 0.2
+    
+    mm = Planet(tint_cgs=0, t1_cgs=to_temp(1.5), k1=120, t2_cgs=to_temp(1.1), k2=0.2, t0_cgs=94,
+           p0_cgs=1.5*1e6, nn=1.33, alpha=0.77, gamma=1.4, dd=dd, kappa_cgs=kappa, gravity=True)
+
+    print "Model", mm.tau_rc, mm.tau0
+
+    pl.clf()
+    tau = logspace(-3, 2, 100)
+    pl.semilogy(mm.temp(tau), 1e-6*mm.pressure(tau))
+    pl.ylim(1e0, 1e-3)
+    pl.xlim(60, 175)
+    pl.draw()
+
+    pl.figure(2)
+    pl.clf()
+
+    pp = 1e-6*mm.pressure(tau)
+    # red for stuff in the convective zone
+    # blue for stuff in the radiative zone
+    # solid for flux up
+    # dashed for flux down
+    # dotted for temperature
+    pl.semilogy(1e-3*sigma_cgs*mm.temp_conv(tau)**4, pp, 'r:')    
+    pl.semilogy(1e-3*sigma_cgs*mm.temp_rad(tau)**4, pp, 'b:')
+    pl.semilogy(1e-3*mm.frad_down_conv(tau), pp, 'r--')
+    pl.semilogy(1e-3*mm.frad_up_conv(tau), pp, 'r')
+    pl.semilogy(1e-3*mm.frad_up_rad(tau), pp, 'b-')
+    pl.semilogy(1e-3*mm.frad_down_rad(tau), pp, 'b--')
+
+    pl.semilogy(1e-3*mm.fstar_net(tau), pp, 'g')
+    pl.semilogy(1e-3*mm.fconv_up_conv(tau), pp, 'm')
+
+    # cyan lines are net fluxes, solid applies in radiative zone,
+    # dashed applies in convective zone.
+    pl.semilogy(1e-3*mm.frad_net_rad(tau), pp, 'c')
+    pl.semilogy(1e-3*mm.frad_net_conv(tau), pp, 'c--')
+    
+    p_rc = 1e-6*mm.pressure(mm.tau_rc)
+    pl.plot([0,20], [p_rc, p_rc], 'k')
+    pl.xlim(0, 4)
+    pl.ylim(1.5, 0.001)
+    pl.draw()
+
 ##############################
 ## Utility stuff
 
