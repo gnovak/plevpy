@@ -114,22 +114,29 @@ def test():
     # these are not used in solving for a model, just check them to make sure they run
     mm.frad_down_conv(1.1)
 
-    mm = PlanetFromGravDirect(gg_cgs = 58600, tau0=100, sig0=9, nn=1, alpha=1,
+    # spec surf grav
+    mm = PlanetFromGrav(gg_cgs = 58600, tau0=1000, sig0=9, nn=1, alpha=1,
                t1_cgs=75, k1=1, t2_cgs=0, k2=0, 
                gamma=1.67, dd=1.5, kappa_cgs=0.2)
 
+    # This is for another method of solving for planet using surf. grav that I haven't gotten to work
+    # mm = PlanetFromGravDirect(gg_cgs = 58600, tau0=100, sig0=9, nn=1, alpha=1,
+    #            t1_cgs=75, k1=1, t2_cgs=0, k2=0, 
+    #            gamma=1.67, dd=1.5, kappa_cgs=0.2)
+
 def all_figs():
     # This is just to exercise code
-    fig1()
-    fig2()
-    fig3()
-    fig4()
-    fig5(1.5)
-    fig6()
-    fig7()
-    fig8_9()
-    fig10_11()
-    fig12_13()
+    fig1()  # this looks perfect to me.
+    fig2()  # this looks perfect to me.
+    fig3()  # this looks perfect to me.
+    fig4()  # this looks perfect to me.
+    fig5(1.5) # this looks perfect to me.
+    fig6()  # Almost perfect, small difference in where it hits x axis for dd=1.6
+    fig7()  # this looks perfect to me.
+    fig8_9() # Almost perfect, panel 2 seems to hit 800 K at just a
+             # bit higher pressures than the figure.
+    fig10_11() # this looks perfect to me.
+    fig12_13() # Almost perfect, small differences in where the curve hits the axes.
 
 class Planet:
     """Just contains the expressions for fluxes, etc, in RC.  Doesn't
@@ -233,10 +240,19 @@ class Planet:
     def frad_net_conv(s, tau):
         return (s.frad_up_conv(tau) - s.frad_down_conv(tau))
 
-    def fconv_up_conv(s, tau):
+    def fconv_up_conv(s, tau, hypothetical=False):
         """Upward convective flux in the convective region, RC eq 22"""        
-        return (s.fint_cgs + s.fstar_net(tau) 
+        result = (s.fint_cgs + s.fstar_net(tau) 
                 - s.frad_up_conv(tau) + s.frad_down_conv(tau))
+
+        # by default, zero out convective flux above the rad/conv transition.
+        if not hypothetical:
+            if iterable(tau):
+                result[tau<s.tau_rc] = 0
+            else:
+                if tau < s.tau_rc:
+                    return 0
+        return result
 
     def temp_conv(s, tau):
         """Temp profile in convective region, RC eq 11"""
@@ -403,7 +419,8 @@ class Planet:
         
         assert abs(taus[0]/s.tau_rc - 1) < 1e-4
 
-        p_rc = s.pressure_conv(s.tau_rc)[0]
+        #p_rc = s.pressure_conv(s.tau_rc)[0]
+        p_rc = s.pressure_conv(s.tau_rc)
         return scipy.integrate.odeint(derivs, [p_rc], taus, hmax=0.1, mxstep=5000)
                 
 ##############################
@@ -745,7 +762,7 @@ class PlanetFromGravDirect(Planet):
 
         taul, tauh = 1, 1
         ff(1.1)
-
+        raise NotImplemented
         #while ff(taul) < 0 and 2*taul != taul: taul /= 2.0
         #while ff(tauh) > 0 and 2*tauh != tauh: tauh *= 2.0
         #tau_rc = scipy.optimize.bisect(ff, taul, tauh, xtol=dtau_rc)
@@ -793,19 +810,23 @@ def evolve(ts_gyr, mass, gg_cgs=None, sig0=None, gamma=1.67, **kw):
     return scipy.integrate.odeint(derivs, [sig0], ts)
     
 def evolve_plot():
-    ts = linspace(0,1e-1,25)
+    ts = linspace(0,1e1,100)
     gg=8337
     mass = 2e30
     
     pl.clf()
-    params = dict(t1_cgs=150, k1=100, t2_cgs=105, k2=0.06, tau0=1000,
+    params = dict(k1=100, t2_cgs=105, k2=0.06, tau0=1000,
                   nn=2, alpha=0.85, gamma=1.4, dd=1.5, kappa_cgs=0.2)
     sigs = [12.75,13.75,14.75]
-
+    t1s = [50, 150, 250]
+    sig = 13.75
+    t1 = 150
+    
     for sig in sigs:
-        sig_time = evolve(ts, mass, sig0=sig, gg_cgs=gg, **params)
+    #for t1 in t1s:
+        sig_time = evolve(ts, mass, sig0=sig, gg_cgs=gg, t1_cgs=t1, **params)
 
-        mms = [PlanetFromGrav(sig0=the_sig, gg_cgs=gg, **params)
+        mms = [PlanetFromGrav(sig0=the_sig, gg_cgs=gg, t1_cgs=t1, **params)
               for the_sig in sig_time]
         
         pl.subplot(2,3,1)
@@ -813,11 +834,13 @@ def evolve_plot():
         pl.subplot(2,3,2)
         pl.semilogy(ts, [the_m.lum_int(mass) for the_m in mms])
         pl.subplot(2,3,3)
-        pl.plot(ts, [the_m.tau_rc for the_m in mms])
+        pl.plot(ts, [(the_m.fint_cgs/sigma_cgs)**0.25 for the_m in mms])
         pl.subplot(2,3,4)
         pl.plot(ts, [the_m.temp([1.0])[0] for the_m in mms])
         pl.subplot(2,3,5)
         pl.plot(ts, 1e-3*array([the_m.pressure(1.0) for the_m in mms]))
+        pl.subplot(2,3,6)
+        pl.plot(ts, [the_m.tau_rc for the_m in mms])
 
     pl.subplot(2,3,1)
     pl.xlabel('t (gyr)')        
@@ -826,14 +849,17 @@ def evolve_plot():
     pl.xlabel('t (gyr)')        
     pl.ylabel('L (erg/s)')
     pl.subplot(2,3,3)
-    pl.xlabel('t (gyr)')        
-    pl.ylabel('tau_rc')
+    pl.ylabel('T_int (K)')    
+    pl.xlabel('t (gyr)')
     pl.subplot(2,3,4)
     pl.xlabel('t (gyr)')        
     pl.ylabel('T(tau=1) (K)')
     pl.subplot(2,3,5)
     pl.ylabel('P(tau=1) (mbar)')    
     pl.xlabel('t (gyr)')
+    pl.subplot(2,3,6)
+    pl.xlabel('t (gyr)')        
+    pl.ylabel('tau_rc')
     
     pl.draw()
     
@@ -982,6 +1008,7 @@ def fig1():
         result.append(row)
 
     levels = array([0.01, .1, 0.5, 1.0, 2.0])/dd
+    pl.cla()
     pl.contour(X,dd*Y,array(result), levels)
     pl.gca().set_yscale('log')
     pl.ylim(10,0.01)
@@ -1008,6 +1035,7 @@ def fig2():
         result.append(mm.tau_rc)
     result = asarray(result)
 
+    pl.clf()
     pl.semilogy(fbons, dd*result)
     pl.ylim(20, 0.01)
     pl.draw()
@@ -1017,9 +1045,7 @@ def fig3():
     # same.  There are some parameters that they didn't specify,
     # though.
 
-    # their plot actually shows the radiative temp only, I include the
-    # overall temp as dotted lines.
-    
+    # Specified
     nn=2
     gamma=1.4
     tint=0
@@ -1032,38 +1058,43 @@ def fig3():
     # Value shouldn't matter?
     t1=1000
     p0 = 1e6
-    dd=1.0  # actually this one does matter
     taus = logspace(-2,2,100)
 
+    # NOTE -- this value isn't specified in the paper but is necessary
+    # to get the lines to hit the x-axis in the right spot.
+    dd = 1.6  # this one isn't specified but matters
+
     # value unspecified in paper?
-    alpha = 1.0  # this makes a difference
+    alpha = 1.0
     kappa = 0.2
     
     pl.clf()
 
     cols = ['b', 'r', 'g', 'k']
     kods = [0, 0.1, 0.5, 10]
-    cols = ['k']
-    kods = [10]
     
     for kod,cc in zip(kods, cols):
         kk = dd*kod
-
+        print kk
         mm = PlanetFromFluxTau(tint_cgs=tint, t1_cgs=t1, k1=kk, tau0=tau0, p0_cgs=p0, nn=nn,
                     alpha=alpha, gamma=gamma, dd=dd, kappa_cgs=kappa, gravity=True, relaxed=True)
+        # NOTE -- they seem to be plotting temperature from the
+        # radiative solution, even though they just say that they're
+        # temperature profiles.
         xx = (mm.temp_rad(taus)/t1)**4
         xx2 = (mm.temp(taus)/t1)**4
-        yy = mm.pressure(taus)/p0
+        print kk, mm.tau_rc
+        # NOTE -- they use power law for pressure throughout the model.
+        #yy = mm.pressure(taus)/p0
+        yy = mm.pressure_conv(taus)/p0
         pl.loglog(xx,yy, c=cc)
-        pl.loglog(xx2,yy, c=cc, ls=':')
+        #pl.loglog(xx2,yy, c=cc, ls=':')
 
     pl.xlim(0.4, 10)
     pl.ylim(2, 0.1)
     pl.draw()
     
 def fig4():
-    # Looks good but I only get n=1
-    
     # shouldn't matter?
     tint=0
     dd = 2.0
@@ -1071,10 +1102,10 @@ def fig4():
     tau0=1000
     p0=1e4
     gamma = 1.2
-    kappa = 2.0
+    kappa = 0.2
     alpha = 3.0
     
-    kods = logspace(-3,-0.01,4)
+    kods = logspace(-3,-0.01,50)
     nns = [1,2,4]
     
     taus = logspace(-2,2,100)
@@ -1087,16 +1118,21 @@ def fig4():
             kk = kod*dd
             mm = PlanetFromFluxTau(tint_cgs=tint, k1=kk, nn=nn,
                         t1_cgs=t1, tau0=tau0, p0_cgs=p0,
-                        alpha=alpha, gamma=gamma, dd=dd, kappa_cgs=kappa, gravity=True)
+                        alpha=alpha, gamma=gamma, dd=dd, kappa_cgs=kappa, gravity=False)
             # I think I'm supposed to just find the pressure if it
             # were radiative, to find out if the region is convective
             # or not.
             tt = mm.temp_rad(taus)
-            pp = mm.pressure_rad_hypothetical(taus)
+            # NOTE -- they seem to use the power law for pressure
+            # throughout the model.
+            # pp = mm.pressure_rad_hypothetical(taus)
+            pp = mm.pressure_conv(taus)
             log_deriv = diff(log(tt))/diff(log(pp))
+            pl.figure(2)
+            pl.semilogx(lave(pp), log_deriv)
+            pl.figure(1)
             result.append(log_deriv.max())
         pl.semilogx(kods, result)
-        print result
         
     pl.ylim(0,0.4)
     pl.draw()
@@ -1145,13 +1181,17 @@ def fig6():
     kappa = 0.2
     ti = 100
     p0 = 1e6
-    dd = 1.5
     gamma = 1.4
     alpha = 1
-    tau0 = 1000
-    tau = logspace(-2,3,100)
-    
+    tau = logspace(-3,6,1000)
+
+    # NOTE -- not specified, but seems to matter.  Values of ~1.6 give
+    # good values for the crossing point, but you don't get good
+    # values for where it hits the x axis until dd ~3.
+    dd = 3.0
+
     # Specified
+    tau0 = 1
     t1 = 10*ti
     nn = 2
     kods = [0.1, 2]
@@ -1160,32 +1200,36 @@ def fig6():
     for kod in kods:
         kk = kod*dd
         mm = PlanetFromFluxTau(tint_cgs=ti, t1_cgs=t1, k1=kk, tau0=tau0, p0_cgs=p0, nn=nn,
-                    alpha=alpha, gamma=gamma, dd=dd, kappa_cgs=kappa, gravity=True)
-        xx = (mm.temp(tau)/t1)**4
-        yy = mm.pressure(tau)/p0
+                    alpha=alpha, gamma=gamma, dd=dd, kappa_cgs=kappa, gravity=True, relaxed=True)
+        # NOTE -- they are plotting the radiative temp profile though 
+        #xx = (mm.temp(tau)/t1)**4
+        xx = (mm.temp_rad(tau)/t1)**4
+        # NOTE -- they seem to use power law expression for pressure
+        # throughout model.
+        #yy = mm.pressure(tau)/p0
         #yy = mm.pressure_rad_hypothetical(tau)/p0
+        yy = mm.pressure_conv(tau)/p0
         pl.loglog(xx,yy)
         
-    pl.ylim(1e3,0.1)
-    pl.ylim(1e3,0.001)
+    pl.ylim(1e3,0.05)
     pl.xlim(0.3,200)
     pl.draw()
 
 def fig7():
     # axes
-    kods = logspace(-1, 1, 4)
-    fratios = logspace(-1, 5, 5)
-    tau = logspace(0,4,30)
+    kods = logspace(-1.2, 1, 50)
+    fratios = logspace(-1, 5, 50)
+    tau = logspace(0,6,400)
     levels = [2,10,1e2,1e3,1e4,1e5]
 
     # shouldn't matter
     tint = 100
     gamma = 1.4
-    tau0 = 1000
     p0 = 1e6
     alpha = 1
     dd = 1.5
     kappa = 0.2
+    tau0 = 1
     
     # specified
     nn=2
@@ -1199,12 +1243,18 @@ def fig7():
         for fratio in fratios:
             t1 = tint*fratio**0.25
             mm = PlanetFromFluxTau(tint_cgs=tint, t1_cgs=t1, k1=kk, tau0=tau0, sig0=None, p0_cgs=p0,
-                        nn=nn, alpha=alpha, gamma=gamma, dd=dd, kappa_cgs=kappa, gravity=True)
+                        nn=nn, alpha=alpha, gamma=gamma, dd=dd, kappa_cgs=kappa, gravity=False, relaxed=True)
             tt = mm.temp_rad(tau)
-            pp = mm.pressure_rad_hypothetical(tau)
+            # NOTE -- they seem to use power law expression for
+            # pressure throughout region.
+            #pp = mm.pressure_rad_hypothetical(tau)
+            pp = mm.pressure_conv(tau)
             limit = (gamma-1)/gamma
             lderiv = diff(log(tt))/diff(log(pp))
-            idx = lderiv.searchsorted(limit)
+            convecting = (lderiv > limit)
+            convecting_idx = nonzero(convecting)[0]
+            idx = convecting_idx[0] if len(convecting_idx) != 0 else len(avetau)-1
+
             if idx != len(avetau):
                 row.append(dd*avetau[idx])
             else:
@@ -1212,14 +1262,13 @@ def fig7():
             
         result.append(row)
         
-    print result
     X,Y = structure.make_grid(kods, fratios)
 
     pl.clf()
     pl.contour(X,Y,result,levels)
     pl.gca().set_xscale('log')
     pl.gca().set_yscale('log')
-    pl.xlim(0.1, 10)
+    pl.xlim(0.07, 10)
     pl.ylim(1e5, 0.1)
     pl.draw()
     
@@ -1227,7 +1276,7 @@ def fig8_9():
     t1 = (160*1e3/sigma_cgs)**0.25
 
     # unspecified
-    dd=1.5
+    dd=1.6
     kappa=0.2
     
     common = dict(tint_cgs=0, t1_cgs=t1, k1=0, t0_cgs=730, p0_cgs=92*1e6, alpha=0.8,
@@ -1243,8 +1292,12 @@ def fig8_9():
     pl.clf()
     tau1 = logspace(-2, 3, 100)
     tau2 = logspace(-2, 5, 100)
-    pl.semilogy(m1.temp(tau1), 1e-6*m1.pressure(tau1))
-    pl.semilogy(m2.temp(tau2), 1e-6*m2.pressure(tau2))
+    #pl.semilogy(m1.temp(tau1), 1e-6*m1.pressure(tau1))
+    #pl.semilogy(m2.temp(tau2), 1e-6*m2.pressure(tau2))
+    # NOTE -- they seem to use power law for pressure throughout
+    # model.
+    pl.semilogy(m1.temp(tau1), 1e-6*m1.pressure_conv(tau1))
+    pl.semilogy(m2.temp(tau2), 1e-6*m2.pressure_conv(tau2))
     pl.ylim(1e2, 1e-2)
     pl.xlim(150, 800)
     pl.draw()
@@ -1252,20 +1305,24 @@ def fig8_9():
     pl.figure(2)
     pl.clf()
 
-    pp = 1e-6*m1.pressure(tau1)
+    # NOTE -- they seem to always use power law for pressure
+    #pp = 1e-6*m1.pressure(tau1)
+    pp = 1e-6*m1.pressure_conv(tau1)
+    rad = tau1 < m1.tau_rc
+    conv = tau1 >= m1.tau_rc
     # red for stuff in the convective zone
     # blue for stuff in the radiative zone
     # solid for flux up
     # dashed for flux down
     # dotted for temperature
-    pl.semilogy(1e-3*sigma_cgs*m1.temp_conv(tau1)**4, pp, 'r:')    
-    pl.semilogy(1e-3*sigma_cgs*m1.temp_rad(tau1)**4, pp, 'b:')
-    pl.semilogy(1e-3*m1.frad_down_conv(tau1), pp, 'r--')
-    pl.semilogy(1e-3*m1.frad_up_conv(tau1), pp, 'r')
-    pl.semilogy(1e-3*m1.frad_up_rad(tau1), pp, 'b-')
-    pl.semilogy(1e-3*m1.frad_down_rad(tau1), pp, 'b--')
+    pl.semilogy(1e-3*sigma_cgs*m1.temp_conv(tau1[conv])**4, pp[conv], 'r:')    
+    pl.semilogy(1e-3*sigma_cgs*m1.temp_rad(tau1[rad])**4, pp[rad], 'b:')
+    pl.semilogy(1e-3*m1.frad_down_conv(tau1[conv]), pp[conv], 'r--')
+    pl.semilogy(1e-3*m1.frad_up_conv(tau1[conv]), pp[conv], 'r')
+    pl.semilogy(1e-3*m1.frad_up_rad(tau1[rad]), pp[rad], 'b-')
+    pl.semilogy(1e-3*m1.frad_down_rad(tau1[rad]), pp[rad], 'b--')
 
-    p_rc = 1e-6*m1.pressure(m1.tau_rc)
+    p_rc = 1e-6*m1.pressure_conv(m1.tau_rc)
     pl.plot([0, 800], [p_rc, p_rc], 'k')
     pl.xlim(0, 800)
     pl.ylim(2, 0.01)
@@ -1279,21 +1336,27 @@ def fig10_11():
     def to_temp(xx):
         return (xx*1e3/sigma_cgs)**0.25
 
-    common = dict(tint_cgs=to_temp(5.4), p0_cgs=1.1*1e6, nn=2, alpha=0.85, gamma=1.4, dd=dd, kappa_cgs=kappa, gravity=True)
-    m1 = PlanetFromFluxTemp(t1_cgs=0, k1=0, t2_cgs=to_temp(8.3), k2=0, t0_cgs=165, **common)
-    m2 = PlanetFromFluxTemp(t1_cgs=0, k1=0, t2_cgs=to_temp(8.3), k2=0, t0_cgs=168, **common)
-    m3 = PlanetFromFluxTemp(t1_cgs=to_temp(1.3), k1=100, t2_cgs=to_temp(7.0), k2=0.06, t0_cgs=191, **common)
+    common = dict(tint_cgs=to_temp(5.4), p0_cgs=1.1*1e6, nn=2, alpha=0.85, gamma=1.4, tau0=6.0, dd=dd, kappa_cgs=kappa, gravity=False)
+
+    #m1 = PlanetFromFluxTemp(t1_cgs=0, k1=0, t2_cgs=to_temp(8.3), k2=0, t0_cgs=165, **common)
+    #m2 = PlanetFromFluxTemp(t1_cgs=0, k1=0, t2_cgs=to_temp(8.3), k2=0, t0_cgs=168, **common)
+    #m3 = PlanetFromFluxTemp(t1_cgs=to_temp(1.3), k1=100, t2_cgs=to_temp(7.0), k2=0.06, t0_cgs=191, **common)
+    m1 = PlanetFromFluxTau(t1_cgs=0, k1=0, t2_cgs=to_temp(8.3), k2=0, **common)
+    m2 = PlanetFromFluxTau(t1_cgs=0, k1=0, t2_cgs=to_temp(8.3), k2=0, **common)
+    m3 = PlanetFromFluxTau(t1_cgs=to_temp(1.3), k1=100, t2_cgs=to_temp(7.0), k2=0.06, **common)
     
-    print "Model 1", m1.tau_rc, m1.tau0
-    print "Model 2", m2.tau_rc, m2.tau0
-    print "Model 3", m3.tau_rc, m3.tau0
+    print "Model 1", m1.tau_rc, m1.tau0, m1.t0_cgs
+    print "Model 2", m2.tau_rc, m2.tau0, m2.t0_cgs
+    print "Model 3", m3.tau_rc, m3.tau0, m3.t0_cgs
 
     pl.figure(1)
     pl.clf()
-    tau = logspace(-3, 2, 100)
-    pl.semilogy(m1.temp(tau), 1e-6*m1.pressure(tau))
-    pl.semilogy(m2.temp(tau), 1e-6*m2.pressure(tau))
-    pl.semilogy(m3.temp(tau), 1e-6*m3.pressure(tau))
+    tau = logspace(-6, 2, 100)
+    # NOTE -- they always use power law for pressure
+    # NOTE -- model 1 explicitly disallows convection, so only plot radiative temp.
+    pl.semilogy(m1.temp_rad(tau), 1e-6*m1.pressure_conv(tau))
+    pl.semilogy(m2.temp(tau), 1e-6*m2.pressure_conv(tau))
+    pl.semilogy(m3.temp(tau), 1e-6*m3.pressure_conv(tau))
     pl.ylim(1e0, 1e-3)
     pl.xlim(100, 200)
     pl.draw()
@@ -1301,28 +1364,25 @@ def fig10_11():
     pl.figure(2)
     pl.clf()
 
-    pp = 1e-6*m1.pressure(tau)
-    # red for stuff in the convective zone
-    # blue for stuff in the radiative zone
-    # solid for flux up
-    # dashed for flux down
-    # dotted for temperature
-    pl.semilogy(1e-3*sigma_cgs*m1.temp_conv(tau)**4, pp, 'r:')    
-    pl.semilogy(1e-3*sigma_cgs*m1.temp_rad(tau)**4, pp, 'b:')
-    pl.semilogy(1e-3*m1.frad_down_conv(tau), pp, 'r--')
-    pl.semilogy(1e-3*m1.frad_up_conv(tau), pp, 'r')
-    pl.semilogy(1e-3*m1.frad_up_rad(tau), pp, 'b-')
-    pl.semilogy(1e-3*m1.frad_down_rad(tau), pp, 'b--')
+    # NOTE -- they always use power law for pressure
+    pp = 1e-6*m3.pressure_conv(tau)
+    rad = tau < m3.tau_rc
+    conv = tau >= m3.tau_rc
+    pl.semilogy(1e-3*m3.frad_down_conv(tau[conv]), pp[conv], 'r--')
+    pl.semilogy(1e-3*m3.frad_up_conv(tau[conv]), pp[conv], 'r')
+    pl.semilogy(1e-3*m3.frad_up_rad(tau[rad]), pp[rad], 'b-')
+    pl.semilogy(1e-3*m3.frad_down_rad(tau[rad]), pp[rad], 'b--')
 
-    pl.semilogy(1e-3*m1.fstar_net(tau), pp, 'g')
-    pl.semilogy(1e-3*m1.fconv_up_conv(tau), pp, 'm')
+    pl.semilogy(1e-3*m3.fstar_net(tau), pp, 'g')
+    pl.semilogy(1e-3*m3.fconv_up_conv(tau), pp, 'm')
 
     # cyan lines are net fluxes, solid applies in radiative zone,
     # dashed applies in convective zone.
-    pl.semilogy(1e-3*m1.frad_net_rad(tau), pp, 'c')
-    pl.semilogy(1e-3*m1.frad_net_conv(tau), pp, 'c--')
+    pl.semilogy(1e-3*m3.frad_net_rad(tau[rad]), pp[rad], 'c')
+    pl.semilogy(1e-3*m3.frad_net_conv(tau[conv]), pp[conv], 'c--')
                 
-    p_rc = 1e-6*m1.pressure(m1.tau_rc)
+    # NOTE -- they always use power law for pressure
+    p_rc = 1e-6*m3.pressure_conv(m3.tau_rc)
     pl.plot([0,20], [p_rc, p_rc], 'k')
     pl.xlim(0, 20)
     pl.ylim(1, 0.001)
@@ -1338,43 +1398,49 @@ def fig12_13():
     dd = 1.5
     kappa = 0.2
     
-    mm = PlanetFromFluxTemp(tint_cgs=0, t1_cgs=to_temp(1.5), k1=120, t2_cgs=to_temp(1.1), k2=0.2, t0_cgs=94,
-           p0_cgs=1.5*1e6, nn=1.33, alpha=0.77, gamma=1.4, dd=dd, kappa_cgs=kappa, gravity=True)
+    mm = PlanetFromFluxTau(tint_cgs=0, t1_cgs=to_temp(1.5), k1=120, t2_cgs=to_temp(1.1), k2=0.2, tau0=5.3,
+           p0_cgs=1.5*1e6, nn=4/3.0, alpha=0.77, gamma=1.4, dd=dd, kappa_cgs=kappa, gravity=False, relaxed=True)
 
-    print "Model", mm.tau_rc, mm.tau0
+    print "Model", mm.tau_rc, mm.tau0, mm.t0_cgs
 
     pl.clf()
-    tau = logspace(-3, 2, 100)
-    pl.semilogy(mm.temp(tau), 1e-6*mm.pressure(tau))
+    pl.figure(1)
+    tau = logspace(-4, 2, 100)
+    # NOTE -- they always use power law for pressure
+    pl.semilogy(mm.temp(tau), 1e-6*mm.pressure_conv(tau))
     pl.ylim(1e0, 1e-3)
-    pl.xlim(60, 175)
+    pl.xlim(60, 180)
     pl.draw()
 
     pl.figure(2)
     pl.clf()
 
-    pp = 1e-6*mm.pressure(tau)
+    # NOTE -- they always use power law for pressure
+    pp = 1e-6*mm.pressure_conv(tau)
+    rad = tau < mm.tau_rc
+    conv = tau >= mm.tau_rc
     # red for stuff in the convective zone
     # blue for stuff in the radiative zone
     # solid for flux up
     # dashed for flux down
     # dotted for temperature
-    pl.semilogy(1e-3*sigma_cgs*mm.temp_conv(tau)**4, pp, 'r:')    
-    pl.semilogy(1e-3*sigma_cgs*mm.temp_rad(tau)**4, pp, 'b:')
-    pl.semilogy(1e-3*mm.frad_down_conv(tau), pp, 'r--')
-    pl.semilogy(1e-3*mm.frad_up_conv(tau), pp, 'r')
-    pl.semilogy(1e-3*mm.frad_up_rad(tau), pp, 'b-')
-    pl.semilogy(1e-3*mm.frad_down_rad(tau), pp, 'b--')
+    #pl.semilogy(1e-3*sigma_cgs*mm.temp_conv(tau)**4, pp, 'r:')    
+    #pl.semilogy(1e-3*sigma_cgs*mm.temp_rad(tau)**4, pp, 'b:')
+    pl.semilogy(1e-3*mm.frad_down_conv(tau[conv]), pp[conv], 'r--')
+    pl.semilogy(1e-3*mm.frad_up_conv(tau[conv]), pp[conv], 'r')
+    pl.semilogy(1e-3*mm.frad_up_rad(tau[rad]), pp[rad], 'b-')
+    pl.semilogy(1e-3*mm.frad_down_rad(tau[rad]), pp[rad], 'b--')
 
-    pl.semilogy(1e-3*mm.fstar_net(tau), pp, 'g')
-    pl.semilogy(1e-3*mm.fconv_up_conv(tau), pp, 'm')
+    #pl.semilogy(1e-3*mm.fstar_net(tau), pp, 'g')
+    #pl.semilogy(1e-3*mm.fconv_up_conv(tau), pp, 'm')
 
     # cyan lines are net fluxes, solid applies in radiative zone,
     # dashed applies in convective zone.
-    pl.semilogy(1e-3*mm.frad_net_rad(tau), pp, 'c')
-    pl.semilogy(1e-3*mm.frad_net_conv(tau), pp, 'c--')
+    pl.semilogy(1e-3*mm.frad_net_rad(tau[rad]), pp[rad], 'c')
+    pl.semilogy(1e-3*mm.frad_net_conv(tau[conv]), pp[conv], 'c--')
     
-    p_rc = 1e-6*mm.pressure(mm.tau_rc)
+    # NOTE -- they always use power law for pressure
+    p_rc = 1e-6*mm.pressure_conv(mm.tau_rc)
     pl.plot([0,20], [p_rc, p_rc], 'k')
     pl.xlim(0, 4)
     pl.ylim(1.5, 0.001)
