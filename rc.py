@@ -48,7 +48,7 @@
 #   sig0
 #
 #   Precision with which to find roots when solving for continuity:
-#   dtau0, dt0, dgg, 
+#   dtau_rc, dgg, 
 #
 #   Opacity, needed to solve for pressure in the radiative region:
 #   kappa_cgs
@@ -61,7 +61,7 @@
 #   gravity = True/False  (can be time consuming)
 #
 # Flat list of parameters (for reminding myself)
-#   gg_cgs, k1, k2, p0_cgs, nn, alpha, gamma, dd t0_cgs, tau0 tau_rc tint_cgs, t1_cgs, t2_cgs sig0 dtau0, dt0, dgg, kappa_cgs,  gravity, tau_rc
+#   gg_cgs, k1, k2, p0_cgs, nn, alpha, gamma, dd t0_cgs, tau0 tau_rc tint_cgs, t1_cgs, t2_cgs sig0 dtau_rc, dgg, kappa_cgs,  gravity, tau_rc
 #
 # Some example models
 ### Venus 
@@ -89,37 +89,77 @@ import structure
 sigma_cgs = 5.67e-5
 G_cgs = 6.67e-8  # Only enters into calculating the luminosity
 
-def test():
+def test(long=False):
     # quick test to exercise all of the code paths
-    # spec tau0, sigma, 
-        
-    mm = PlanetFromFluxTau(tau0=1000, sig0=9, nn=1, alpha=1,
-                t1_cgs=75, k1=1, t2_cgs=0, k2=0, tint_cgs=75,
-                gamma=1.67, dd=1.5, kappa_cgs=0.2, gravity=True)
-    # spec  tau0, p0
-    mm = PlanetFromFluxTau(tau0=1000, sig0=None, p0_cgs=1e2*1e6, nn=1, alpha=1,
-                t1_cgs=75, k1=1, t2_cgs=0, k2=0, tint_cgs=75,
-                gamma=1.67, dd=1.5, kappa_cgs=0.2, gravity=True)
 
-    # spec  t0, sigma
-    mm = PlanetFromFluxTemp(t0_cgs=1000, sig0=9, nn=1, alpha=1,
-               t1_cgs=75, k1=1, t2_cgs=0, k2=0, tint_cgs=75,
-               gamma=1.67, dd=1.5, kappa_cgs=0.2, gravity=True)
+    def model_test(the_m):
+        the_m.frad_down_conv(1.1)
 
-    # spec  t0, p0
-    mm = PlanetFromFluxTemp(t0_cgs=1000, sig0=None, p0_cgs=1e2*1e8,nn=1, alpha=1,
-               t1_cgs=75, k1=1, t2_cgs=0, k2=0, tint_cgs=75,
-               gamma=1.67, dd=1.5, kappa_cgs=0.2, gravity=True)
+    kw = dict(nn=1, alpha=1, t1_cgs=75, k1=1, t2_cgs=0, k2=0, 
+                  tint_cgs=75, gamma=1.67, dd=1.5)
 
-    # these are not used in solving for a model, just check them to make sure they run
-    mm.frad_down_conv(1.1)
+    ##############################
+    # Straight RC model
+    mm = Planet.FromFluxTau(tau0=1000, sig0=9, **kw)
+    model_test(mm)
+    mm = Planet.FromFluxTau(tau0=1000, p0_cgs=1e2*1e6, **kw)
+    model_test(mm)
+    mm = Planet.FromFluxTemp(t0_cgs=1000, sig0=9, **kw)
+    model_test(mm)
+    mm = Planet.FromFluxTemp(t0_cgs=1000, p0_cgs=1e2*1e8, **kw)
+    model_test(mm)
 
-    # spec surf grav
-    mm = PlanetFromGrav(gg_cgs = 58600, tau0=1000, sig0=9, nn=1, alpha=1,
-               t1_cgs=75, k1=1, t2_cgs=0, k2=0, 
-               gamma=1.67, dd=1.5, kappa_cgs=0.2)
+    ##############################
+    # Gravity model w/ constant opacity
+    mm = PlanetGrav.FromFluxTau(tau0=1000, sig0=9, kappa_cgs=0.2, **kw)
+    model_test(mm)
+    mm = PlanetGrav.FromFluxTau(tau0=1000, p0_cgs=1e2*1e6, kappa_cgs=0.2, **kw)
+    model_test(mm)
+    mm = PlanetGrav.FromFluxTemp(t0_cgs=1000, sig0=9, kappa_cgs=0.2, **kw)
+    model_test(mm)
+    mm = PlanetGrav.FromFluxTemp(t0_cgs=1000, p0_cgs=1e2*1e8, kappa_cgs=0.2, **kw)
+    model_test(mm)
 
-    # This is for another method of solving for planet using surf. grav that I haven't gotten to work
+    ##############################
+    # Gravity model w/ constant functional opacity
+    kap = lambda x,y: 0*x + 0*y + 0.2
+    if long:
+        mm = PlanetGrav.FromFluxTau(tau0=1000, sig0=9, kappa_cgs=0.2, **kw)
+        model_test(mm)
+        mm = PlanetGrav.FromFluxTau(tau0=1000, p0_cgs=4.5e6, kappa_cgs=0.2, **kw)
+        model_test(mm)
+        mm = PlanetGrav.FromFluxTemp(t0_cgs=100, sig0=9, kappa_cgs=0.2, **kw)
+        model_test(mm)
+        mm = PlanetGrav.FromFluxTemp(t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=0.2, **kw)
+        model_test(mm)
+
+    ##############################
+    # Gravity model solving for surface grav
+    del kw['tint_cgs']
+
+    mm = PlanetGrav.FromGravTau(gg_cgs=58600, tau0=1000, sig0=9, kappa_cgs=0.2, **kw)
+    model_test(mm)
+    mm = PlanetGrav.FromGravTau(gg_cgs=58600, tau0=1000, p0_cgs=4.5e6, kappa_cgs=0.2, **kw)
+    model_test(mm)
+    mm = PlanetGrav.FromGravTemp(gg_cgs=58600, t0_cgs=100, sig0=9, kappa_cgs=0.2, **kw)
+    model_test(mm)
+    mm = PlanetGrav.FromGravTemp(gg_cgs=58600, t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=0.2, **kw)
+    model_test(mm)
+
+    ##############################
+    # Gravity model solving for surface with functional opacity 
+    if long:
+        mm = PlanetGrav.FromGravTau(gg_cgs=58600, tau0=1000, sig0=9, kappa_cgs=kap, **kw)
+        model_test(mm)
+        mm = PlanetGrav.FromGravTau(gg_cgs=58600, tau0=1000, p0_cgs=4.5e6, kappa_cgs=kap, **kw)
+        model_test(mm)
+        mm = PlanetGrav.FromGravTemp(gg_cgs=58600, t0_cgs=100, sig0=9, kappa_cgs=kap, **kw)
+        model_test(mm)
+        mm = PlanetGrav.FromGravTemp(gg_cgs=58600, t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=kap, **kw)
+        model_test(mm)
+
+    # # This is for another method of solving for planet using
+    # # surf. grav that I haven't gotten to work
     # mm = PlanetFromGravDirect(gg_cgs = 58600, tau0=100, sig0=9, nn=1, alpha=1,
     #            t1_cgs=75, k1=1, t2_cgs=0, k2=0, 
     #            gamma=1.67, dd=1.5, kappa_cgs=0.2)
@@ -142,49 +182,155 @@ class Planet:
     """Just contains the expressions for fluxes, etc, in RC.  Doesn't
     solve for tau_rc, tau0, t0, or gg"""
 
-    # finding the surface gravity takes a long time and isn't always necessary, so skip it by default.
     def __init__(self, tint_cgs=0,      # Probably need some value for this
                  t1_cgs=0, k1=0, t2_cgs=0, k2=0,  # Might need some of these
-                 nn=1, alpha=1, gamma=1.66, dd=1.5, # These have good defaults
-                 kappa_cgs=None):  
+                 nn=1, alpha=1, gamma=1.66, dd=1.5): # These have good defaults
 
         # fill in values
         self.nn = float(nn)
-        self.alpha = alpha
+        self.alpha = float(alpha)
         self.k1 = float(k1)
         self.k2 = float(k2)
         self.gamma = float(gamma)
         self.dd = float(dd)
 
-        # Don't store these in the object, only store fluxes, to avoid redundant info.
-        #self.t1_cgs = t1_cgs
-        #self.t2_cgs = t2_cgs
-        #self.tint_cgs = tint_cgs
-
-        # When the opacity is a separable function of pressure and
-        # temperature, you can find the surface gravity analtyically.
-        # Allow this as a special case.  This maybe should go under
-        # PlanetFlux b/c you don't care about this if the surface
-        # gravity is specified.
-        if iterable(kappa_cgs):
-            self._kappa_separate_p = kappa_cgs[0]
-            self._kappa_separate_t = kappa_cgs[1]
-            self.kappa = lambda x,y: kappa_cgs[0](x)*kappa_cgs[1](y)
-        elif not callable(kappa_cgs): 
-            # allow just constants, too, pressed into separable form.
-            self._kappa_separate_p = lambda x: 0*asarray(x) + kappa_cgs
-            self._kappa_separate_t = lambda x: 0*asarray(x) + 1.0
-            self.kappa = lambda x,y: self._kappa_separate_p(x)*self._kappa_separate_t(y)
-        else: 
-            self.kappa = kappa_cgs
-
         # simple derived quantities
-        self.f1_cgs, self.f2_cgs, self.fint_cgs = [sigma_cgs*tt**4 for tt in t1_cgs, t2_cgs, tint_cgs]
+        self.f1_cgs, self.f2_cgs, self.fint_cgs = [sigma_cgs*tt**4 for 
+                                                   tt in t1_cgs, t2_cgs, tint_cgs]
         self.beta = alpha*(gamma-1)/gamma
 
         # Not so important parameters
         self.kmin = 1e-3
         self.verbose = True
+
+    @classmethod
+    def FromFluxTau(cls, tau0=None, dtau_rc=1e-4, 
+                    sig0=None, p0_cgs=None,   
+                    relaxed=False, **kw):
+        s = cls(**kw)
+        s.__init_from_flux_tau__(tau0=tau0, dtau_rc=dtau_rc, sig0=sig0, 
+                                 p0_cgs=p0_cgs, relaxed=relaxed)
+        return s
+
+    @classmethod
+    def FromFluxTemp(cls, t0_cgs=None, dtau_rc=1e-4,
+                     sig0=None, p0_cgs=None, **kw):
+        s = cls(**kw)
+        s.__init_from_flux_temp__(t0_cgs=t0_cgs, dtau_rc=dtau_rc, 
+                                  sig0=sig0, p0_cgs=p0_cgs)
+        return s
+
+    def __init_from_flux_tau__(s, tau0=None, dtau_rc=None, 
+                    sig0=None, p0_cgs=None, relaxed=False):
+
+        s.tau0 = float(tau0)
+        s.tau_rc, s.t0_cgs = s._model_from_tau0(dtau_rc)
+
+        if p0_cgs and sig0: raise ValueError, "Can't specify both p0 and sig0"
+        # Pressure isn't used very much, you can get away with not specifying it 
+        s.p0_cgs = p0_cgs or (sig0 and find_pressure(sig0, s.t0_cgs))
+
+        # Usually if you're specifying tau, you want to make sure
+        # you've gotten the R/C boundary.
+        if not relaxed:
+            s._consistency_check()
+        return s
+
+    def __init_from_flux_temp__(s, t0_cgs=None, dtau_rc=None,
+                     sig0=None, p0_cgs=None):
+        """Solve for temperature and flux continuity at the
+        radiative-convective boundary.  This is where the big money is.
+        
+        Follow RC and make T0 a model parameter, then solve for tau_rc and
+        tau_0.  This is to facilitate comparison with their plots.
+
+        Follow suggestions from DSP and specify fluxes via effective temps."""
+        
+        s.t0_cgs = t0_cgs
+        s.tau_rc, s.tau0 = s._model_from_t0(dtau_rc)
+                    
+        if p0_cgs and sig0: raise ValueError, "Can't specify both p0 and sig0"
+        s.p0_cgs = p0_cgs or find_pressure(sig0, s.t0_cgs)
+
+        # Usually if you're specifying T0, you're giving a surface
+        # temp and are not obligated to have a large optical depth.
+        # self._consistency_check()
+        return s
+        
+#
+##############################
+
+    def _model_from_t0(s, dtau_rc):
+        """Solve for temperature and flux continuity at the
+        radiative-convective boundary.  This is where the big money is.
+
+        Follow RC and make T0 a model parameter, then solve for tau_rc and
+        tau_0.  This is to facilitate comparison with their plots.
+
+        Follow suggestions from DSP and specify fluxes via effective temps."""
+
+        def tau0_from_taurc(xx):
+            return xx*(s.t0_cgs/s.temp_rad(xx))**(s.nn/s.beta)
+
+        def ff(xx):
+            cnt[0] += 1
+            tau0 = tau0_from_taurc(xx)
+            value =  s.frad_up_conv(xx, tau0=tau0) - s.frad_up_rad(xx)
+            if s.verbose >= 3: print "Finding root given t0: ", xx, value/ftot
+            return value/ftot
+
+        cnt = [0] 
+        ftot = s.f1_cgs + s.f2_cgs + s.fint_cgs
+
+        # per DSP's complaint, try to make this bulletproof (but don't
+        # allow an infinite loop)
+        taul, tauh = 1.0, 1.0
+        while ff(taul) < 0 and 2*taul != taul: taul /= 2.0
+        while ff(tauh) > 0 and 2*tauh != tauh: tauh *= 2.0
+
+        if s.verbose >=2: print "Starting at", taul, tauh, ff(taul), ff(tauh)
+        tau_rc = scipy.optimize.bisect(ff, taul, tauh, xtol=dtau_rc)
+        if s.verbose >=2: print "Ending at", tau_rc, ff(tau_rc), cnt[0], "iterations"
+
+        return tau_rc, tau0_from_taurc(tau_rc)
+
+    def _model_from_tau0(s, dtau_rc):
+        """Solve for temperature and flux continuity at the
+        radiative-convective boundary.  This is where the big money is.
+
+        For planets with surfaces, you may want to fix the reference
+        temperature and find the optical depth.  For planets without
+        surfaces I think it makes more sense to fix the reference optical
+        depth and find the temperature there.
+
+        Follow suggestions from DSP and specify fluxes via effective temps."""
+
+        def t0_from_taurc(xx):
+            return s.temp_rad(xx)*(s.tau0/xx)**(s.beta/s.nn)
+
+        def ff(xx):
+            cnt[0] += 1
+            t0 = t0_from_taurc(xx)
+            value =  (s.frad_up_conv(xx, t0=t0) - s.frad_up_rad(xx))
+            if s.verbose >= 3: print "Finding root given tau0: ", xx, value/ftot
+            return value/ftot
+
+        cnt = [0] 
+        ftot = s.f1_cgs + s.f2_cgs + s.fint_cgs
+
+        # per DSP's complaint regarding tlusty, try to make this
+        # bulletproof (but don't allow an infinite loop)
+        taul, tauh = 1.0, 1.0
+        while ff(taul) < 0 and 2*taul != taul: taul /= 2.0
+        while ff(tauh) > 0 and 2*tauh != tauh: tauh *= 2.0
+        if s.verbose >=2: print "Starting at", taul, tauh, ff(taul), ff(tauh)
+        tau_rc = scipy.optimize.bisect(ff, taul, tauh, xtol=dtau_rc)
+        if s.verbose >=2: print "Ending at", tau_rc, ff(tau_rc), cnt[0], "iterations"
+
+        # calculate t0_cgs
+        t0_cgs = t0_from_taurc(tau_rc)
+        return tau_rc, t0_cgs
+
 
 ##############################
 ## Convective region
@@ -260,8 +406,8 @@ class Planet:
         ex = s.beta/s.nn
         return s.t0_cgs*(tau/s.tau0)**ex
 
-    def pressure_conv(s, tau):
-        """pressure profile in convective region, RC eq 6"""
+    def pressure(s, tau):
+        """pressure profile, RC eq 6"""
         return s.p0_cgs*(tau/s.tau0)**(1/s.nn)
 
     def fcheck_conv(s, tau):
@@ -344,25 +490,184 @@ class Planet:
         return 0.5*(s.f1_cgs*term1 + s.f2_cgs*term2 + s.fint_cgs*s.dd*tau)
 
     def frad_net_rad(s, tau):
-        return (s.frad_up_rad(tau) - s.frad_down_rad(tau))
+        return (s.frad_up_rad(tau) - s.frad_down_rad(tau))    
+                
+##############################
+## Apply everywhere
+
+    def fstar_net(s, tau):
+        """Net absorbed stellar flux, RC eq 15"""
+        return s.f1_cgs*exp(-s.k1*tau) + s.f2_cgs*exp(-s.k2*tau)
+
+    def temp(s, tau):
+        tau = asarray(tau)
+        result = s.temp_rad(tau)
+        result[tau>s.tau_rc] = s.temp_conv(tau)[tau>s.tau_rc]
+        return result
+    
+## My Extensions
+    def lum(s, mm_cgs):
+        """Luminosity from all sources at the top of the atmosphere.
+        This is the only place that mass enters into the model, so
+        just pass it as an argument here."""
+
+        # probably only need the upward radiative flux here
+        return 4*pi*G_cgs*mm_cgs*s.frad_net_rad(0.0)
+
+    def lum_int(s, mm_cgs):
+        """For cooling, care about how much internal energy is leaking
+        out, not luminosity of object."""
+        return 4*pi*G_cgs*mm_cgs*s.fint_cgs
+        
+    def _consistency_check(s):
+        """Run after solving for the model to check for problems."""
+        if s.tau0 < 2*s.tau_rc:
+            raise ValueError, "Reference optical depth is too low"
+        if s.tau0 < 5.0:
+            raise ValueError, "Reference optical depth is too low"
+
+class PlanetGrav(Planet):
+    "Planet that knows about hydrostatic equilibrium."
+    def __init__(self, kappa_cgs=None, **kw):
+        Planet.__init__(self, **kw)
+
+        # When the opacity is a separable function of pressure and
+        # temperature, you can find the surface gravity analtyically.
+        # Allow this as a special case.  This maybe should go under
+        # PlanetFlux b/c you don't care about this if the surface
+        # gravity is specified.
+        if iterable(kappa_cgs):
+            self._kappa_separate_p = kappa_cgs[0]
+            self._kappa_separate_t = kappa_cgs[1]
+            self.kappa = lambda x,y: kappa_cgs[0](x)*kappa_cgs[1](y)
+        elif not callable(kappa_cgs): 
+            # allow just constants, too, pressed into separable form.
+            self._kappa_separate_p = lambda x: 0*asarray(x) + kappa_cgs
+            self._kappa_separate_t = lambda x: 0*asarray(x) + 1.0
+            self.kappa = lambda x,y: self._kappa_separate_p(x)*self._kappa_separate_t(y)
+        else: 
+            self.kappa = kappa_cgs
+
+    @classmethod
+    def FromFluxTau(cls, tau0=None, dtau_rc=1e-4, 
+                    sig0=None, p0_cgs=None, dgg=1e-2, 
+                    relaxed=False, **kw):
+        s = cls(**kw)
+        s.__init_from_flux_tau__(tau0=tau0, dtau_rc=dtau_rc, 
+                    sig0=sig0, p0_cgs=p0_cgs, relaxed=relaxed)
+        s.gg_cgs = s._surface_gravity(dgg)
+        return s
+        
+    @classmethod
+    def FromFluxTemp(cls, t0_cgs=None, dtau_rc=1e-4,
+                     sig0=None, p0_cgs=None, dgg=1e-2, **kw):
+        s = cls(**kw)
+        s.__init_from_flux_temp__(t0_cgs=t0_cgs, dtau_rc=dtau_rc, 
+                                  sig0=sig0, p0_cgs=p0_cgs)
+        s.gg_cgs = s._surface_gravity(dgg)
+        return s
+
+    @classmethod
+    def FromGravTemp(cls, t0_cgs=None, dtau_rc=1e-4, dtint=0.01, **kw):
+        kw_subset = removeKeys(dict(kw), 
+                               'sig0', 'p0_cgs', 't0_cgs', 'gg_cgs', 'dgg_cgs', 'dtint')
+        s = cls(**kw_subset)
+        s.__init_from_grav_temp__(t0_cgs=t0_cgs, dtau_rc=dtau_rc, dtint=dtint, **kw)
+        return s
+
+    @classmethod
+    def FromGravTau(cls, tau0=None, dtau_rc=1e-4, dtint=0.01, **kw):
+        kw_subset = removeKeys(dict(kw), 
+                               'sig0', 'p0_cgs', 'gg_cgs', 'dgg_cgs')
+        s = cls(**kw_subset)
+        s.__init_from_grav_tau__(tau0=tau0, dtau_rc=dtau_rc, dtint=dtint, **kw)
+        return s
+
+    def __init_from_grav_tau__(s, tau0=None, dtau_rc=None, dtint=None, 
+                               gg_cgs=None, sig0=None, p0_cgs=None, 
+                               relaxed=False, **kw):
+
+        s.gg_cgs = float(gg_cgs)
+        s.tau0 = float(tau0)
+        s.tau_rc, s.t0_cgs = s._model_from_tau0(dtau_rc)
+
+        s._model_from_grav(dtint, tau0=tau0, sig0=sig0, p0_cgs=p0_cgs, dtau_rc=dtau_rc, **kw)
+
+        if p0_cgs and sig0: raise ValueError, "Can't specify both p0 and sig0"
+        # Pressure isn't used very much, you can get away with not specifying it 
+        s.p0_cgs = p0_cgs or (sig0 and find_pressure(sig0, s.t0_cgs))
+
+        # Usually if you're specifying tau, you want to make sure
+        # you've gotten the R/C boundary.
+        if not relaxed:
+            s._consistency_check()
+
+    def __init_from_grav_temp__(s, t0_cgs=None, gg_cgs=None, dtau_rc=None, dtint=None, 
+                                sig0=None, p0_cgs=None, relaxed=False, **kw):
+
+        s.gg_cgs = float(gg_cgs)
+        s.t0_cgs = float(t0_cgs)
+        s.tau_rc, s.tau0 = s._model_from_t0(dtau_rc)
+
+        s._model_from_grav(dtint, t0_cgs=t0_cgs, sig0=sig0, p0_cgs=p0_cgs, dtau_rc=dtau_rc, **kw)
+
+        if p0_cgs and sig0: raise ValueError, "Can't specify both p0 and sig0"
+        # Pressure isn't used very much, you can get away with not specifying it 
+        s.p0_cgs = p0_cgs or (sig0 and find_pressure(sig0, s.t0_cgs))
+
+        # Usually if you're specifying tau, you want to make sure
+        # you've gotten the R/C boundary.
+        #if not relaxed:
+        #    s._consistency_check()
+
+    def _model_from_grav(s, dtint, **kw):
+
+        def make_obj(tint):
+            if 'tau0' in kw:
+                mm = PlanetGrav.FromFluxTau(tint_cgs=tint, **kw)
+            elif 't0_cgs' in kw:
+                mm = PlanetGrav.FromFluxTemp(tint_cgs=tint, **kw)
+            else:
+                raise ValueError, "Don't know how to make the model"
+            return mm
+
+        def ff(tint):
+            mm = make_obj(tint)
+            result = mm.gg_cgs - s.gg_cgs
+            return result
+
+        # It's an error to try to specify tint:
+        if 'tint_cgs' in kw: raise ValueError, "This model solves for Tint"
+
+        tl, th = 100, 100
+
+        while ff(tl) >= 0 and 2*tl != tl: tl /= 2.0
+        while ff(th) <= 0 and 2*th != th: th *= 2.0
+        tint = scipy.optimize.bisect(ff, tl, th, xtol=dtint)
+        return tint 
+
+    def pressure_conv(s, tau):
+        """pressure profile in the convective region, RC eq 6"""
+        return Planet.pressure(s, tau)
 
     def pressure_rad(s, tau):
-        return s._simple_pressure_rad(tau, s.gg_cgs)
-
-    def pressure_rad_hypothetical(s, tau):
         """Forget about the rad/conv boundary and give what the
         radiative pressure would be if there were no convection."""
         # this requires splitting the input array in two b/c of the
         # requirement that the integration start at the rad/conv
         # boundary.
+        if not iterable(tau):
+            result = s._simple_pressure_rad([s.tau_rc, tau])
+            return result[1]
+
         trad = concatenate(([s.tau_rc], tau[tau<=s.tau_rc][::-1]))
         tconv = concatenate(([s.tau_rc], tau[tau>s.tau_rc]))
         prad = s._simple_pressure_rad(trad, s.gg_cgs)[1:][::-1]
         pconv = s._simple_pressure_rad(tconv, s.gg_cgs)[1:]
         pp = concatenate((prad, pconv))
         return pp[:,0]
-    
-    def _simple_pressure_rad(s, taus, gg_cgs):
+
+    def _simple_pressure_rad(s, taus, gg_cgs, use_actual_temp_profile=False):
         """pressure profile in radiative region.  This is not explicitly
         computed in RC.  This assumes you already know the surface gravity"""
         # I don't see how to get this.  I have T(tau), and defn of tau =
@@ -407,7 +712,10 @@ class Planet:
 
         def derivs(yy, tau):
             pp = yy[0]
-            trad = s.temp_rad(tau, relaxed=True)
+            if use_actual_temp_profile:
+                trad = s.temperature(tau, relaxed=True)
+            else:
+                trad = s.temp_rad(tau, relaxed=True)
             result = [gg_cgs/s.kappa(pp, trad)]
             return result
 
@@ -422,20 +730,7 @@ class Planet:
         #p_rc = s.pressure_conv(s.tau_rc)[0]
         p_rc = s.pressure_conv(s.tau_rc)
         return scipy.integrate.odeint(derivs, [p_rc], taus, hmax=0.1, mxstep=5000)
-                
-##############################
-## Apply everywhere
 
-    def fstar_net(s, tau):
-        """Net absorbed stellar flux, RC eq 15"""
-        return s.f1_cgs*exp(-s.k1*tau) + s.f2_cgs*exp(-s.k2*tau)
-
-    def temp(s, tau):
-        tau = asarray(tau)
-        result = s.temp_rad(tau)
-        result[tau>s.tau_rc] = s.temp_conv(tau)[tau>s.tau_rc]
-        return result
-    
     def pressure(s, tau):        
         # handle scalars
         if not iterable(tau):
@@ -451,36 +746,6 @@ class Planet:
             pp = s.pressure_conv(tau)
             pp[tau<s.tau_rc] = pp_rad
             return pp
-
-## My Extensions
-    def lum(s, mm_cgs):
-        """Luminosity from all sources at the top of the atmosphere.
-        This is the only place that mass enters into the model, so
-        just pass it as an argument here."""
-
-        # probably only need the upward radiative flux here
-        return 4*pi*G_cgs*mm_cgs*s.frad_net_rad(0.0)
-
-    def lum_int(s, mm_cgs):
-        """For cooling, care about how much internal energy is leaking
-        out, not luminosity of object."""
-        return 4*pi*G_cgs*mm_cgs*s.fint_cgs
-        
-    def _consistency_check(s):
-        """Run after solving for the model to check for problems."""
-        if s.tau0 < 2*s.tau_rc:
-            raise ValueError, "Reference optical depth is too low"
-        if s.tau0 < 5.0:
-            raise ValueError, "Reference optical depth is too low"
-
-class PlanetFromFlux(Planet):
-    """Make planet specifying fluxes and finding surface gravity"""
-
-    # finding the surface gravity takes a long time and isn't always necessary, so skip it by default.
-    def __init__(self, **kw):  
-        Planet.__init__(self, **kw)
-        # Can't actually solve for the surface gravity here b/c it's
-        # the children that solve for tau_rc, etc.
 
     def _analytic_surface_gravity(s):
         """When the opacity is a separable function of pressure and
@@ -508,128 +773,6 @@ class PlanetFromFlux(Planet):
         gl, gh = 0.0, 1.0
         while ff(gh) > 0 and 2*gh != gh: gh *= 2
         return scipy.optimize.bisect(ff, gl, gh, xtol=dgg)
-
-class PlanetFromFluxTau(PlanetFromFlux):
-    """Make planet specifying fluxes and reference optical depth"""
-
-    def __init__(self, tau0=None, dtau0=1e-4, 
-                 sig0=None, p0_cgs=None,   
-                 dgg=1e-2, gravity=False, relaxed=False, **kw):
-
-        PlanetFromFlux.__init__(self, **kw)
-
-        self.tau0 = tau0
-
-        self.tau_rc, self.t0_cgs = self._model(dtau0)
-                    
-        if p0_cgs and sig0: raise ValueError, "Can't specify both p0 and sig0"
-        # Pressure isn't used very much, you can get away with not specifying it 
-        self.p0_cgs = p0_cgs or (sig0 and find_pressure(sig0, self.t0_cgs))
-
-        if gravity:
-            self.gg_cgs = self._surface_gravity(dgg)
-
-        # Usually if you're specifying tau, you want to make sure
-        # you've gotten the R/C boundary.
-        if not relaxed:
-            self._consistency_check()
-
-
-    def _model(s, dtau0):
-        """Solve for temperature and flux continuity at the
-        radiative-convective boundary.  This is where the big money is.
-
-        For planets with surfaces, you may want to fix the reference
-        temperature and find the optical depth.  For planets without
-        surfaces I think it makes more sense to fix the reference optical
-        depth and find the temperature there.
-
-        Follow suggestions from DSP and specify fluxes via effective temps."""
-
-        def t0_taurc(xx):
-            return s.temp_rad(xx)*(s.tau0/xx)**(s.beta/s.nn)
-
-        def ff(xx):
-            cnt[0] += 1
-            t0 = t0_taurc(xx)
-            value =  (s.frad_up_conv(xx, t0=t0) - s.frad_up_rad(xx))
-            if s.verbose >= 3: print "Finding root given tau0: ", xx, value/ftot
-            return value/ftot
-
-        cnt = [0] 
-        ftot = s.f1_cgs + s.f2_cgs + s.fint_cgs
-
-        # per DSP's complaint regarding tlusty, try to make this
-        # bulletproof (but don't allow an infinite loop)
-        taul, tauh = 1.0, 1.0
-        while ff(taul) < 0 and 2*taul != taul: taul /= 2.0
-        while ff(tauh) > 0 and 2*tauh != tauh: tauh *= 2.0
-        if s.verbose >=2: print "Starting at", taul, tauh, ff(taul), ff(tauh)
-        tau_rc = scipy.optimize.bisect(ff, taul, tauh, xtol=dtau0)
-        if s.verbose >=2: print "Ending at", tau_rc, ff(tau_rc), cnt[0], "iterations"
-
-        # calculate t0_cgs
-        t0_cgs = s.temp_rad(tau_rc)*(s.tau0/tau_rc)**(s.beta/s.nn)
-        return [tau_rc, t0_cgs]
-
-class PlanetFromFluxTemp(PlanetFromFlux):
-    """Make planet specifying fluxes and reference temperature"""
-
-    def __init__(self, t0_cgs=None, dt0=1e-2,
-                 sig0=None, p0_cgs=None,   
-                 dgg=1e-2,
-                 gravity=False, **kw):
-
-        PlanetFromFlux.__init__(self, **kw)
-
-        self.t0_cgs = t0_cgs
-
-        self.tau_rc, self.tau0 = self._model(dt0)
-                    
-        if p0_cgs and sig0: raise ValueError, "Can't specify both p0 and sig0"
-
-        self.p0_cgs = p0_cgs or find_pressure(sig0, self.t0_cgs)
-
-        if gravity:
-            self.gg_cgs = self._surface_gravity(dgg)
-
-        # Usually if you're specifying T0, you're giving a surface
-        # temp and are not obligated to have a large optical depth.
-        # self._consistency_check()
-
-    def _model(s, dt0):
-        """Solve for temperature and flux continuity at the
-        radiative-convective boundary.  This is where the big money is.
-
-        Follow RC and make T0 a model parameter, then solve for tau_rc and
-        tau_0.  This is to facilitate comparison with their plots.
-
-        Follow suggestions from DSP and specify fluxes via effective temps."""
-
-        def tau0_taurc(xx):
-            return xx*(s.t0_cgs/s.temp_rad(xx))**(s.nn/s.beta)
-
-        def ff(xx):
-            cnt[0] += 1
-            tau0 = tau0_taurc(xx)
-            value =  s.frad_up_conv(xx, tau0=tau0) - s.frad_up_rad(xx)
-            if s.verbose >= 3: print "Finding root given t0: ", xx, value/ftot
-            return value/ftot
-
-        cnt = [0] 
-        ftot = s.f1_cgs + s.f2_cgs + s.fint_cgs
-
-        # per DSP's complaint, try to make this bulletproof (but don't
-        # allow an infinite loop)
-        taul, tauh = 1.0, 1.0
-        while ff(taul) < 0 and 2*taul != taul: taul /= 2.0
-        while ff(tauh) > 0 and 2*tauh != tauh: tauh *= 2.0
-
-        if s.verbose >=2: print "Starting at", taul, tauh, ff(taul), ff(tauh)
-        tau_rc = scipy.optimize.bisect(ff, taul, tauh, xtol=dt0)
-        if s.verbose >=2: print "Ending at", tau_rc, ff(tau_rc), cnt[0], "iterations"
-
-        return [tau_rc, tau0_taurc(tau_rc)]
 
 ###############
 #### Evolution
@@ -663,31 +806,6 @@ class PlanetFromFluxTemp(PlanetFromFlux):
 # mixes things at least in the core, so I should be able to reverse
 # this and find the new entropy.  Then solve for a new model and repeat.
 
-def PlanetFromGrav(gg_cgs=None, dtint=1e-2, **kw):
-    def make_obj(tint):
-        if 'tau0' in kw: 
-            mm = PlanetFromFluxTau(tint_cgs=tint, gravity=True, **kw)
-        elif 't0_cgs' in kw:
-            mm = PlanetFromFluxTemp(tint_cgs=tint, gravity=True, **kw)
-        else:
-            raise ValueError, "Don't know how to make the model"
-        return mm
-    
-    def ff(tint):
-        mm = make_obj(tint)
-        result = mm.gg_cgs - gg_cgs
-        return result
-
-    # It's an error to try to specify tint:
-    if 'tint_cgs' in kw: raise ValueError, "This model solves for Tint"
-
-    tl, th = 100, 100
-
-    while ff(tl) >= 0 and 2*tl != tl: tl /= 2.0
-    while ff(th) <= 0 and 2*th != th: th *= 2.0
-    tint = scipy.optimize.bisect(ff, tl, th, xtol=dtint)
-
-    return make_obj(tint)
         
 class PlanetFromGravDirect(Planet): 
     # Well, I think this is in principle working, and the values look
@@ -698,7 +816,7 @@ class PlanetFromGravDirect(Planet):
     # Maybe can define a bunch of models, solve for surface grav, and
     # then interpolate?
 
-    def __init__(self, tau0=None, gg_cgs=None, dtau_rc=1e-2, 
+    def __init__(self, tau0=None, gg_cgs=None, dtau_rc=None, 
                  sig0=None, p0_cgs=None, **kw):
         Planet.__init__(self, **kw)
 
@@ -802,7 +920,7 @@ def evolve(ts_gyr, mass, gg_cgs=None, sig0=None, gamma=1.67, **kw):
     def derivs(yy,tt):
         sig = yy[0]
         en = efactor*exp(2*sig/3.0 - 5/3.0)
-        mm = PlanetFromGrav(gg_cgs=gg_cgs, gamma=gamma, sig0=sig, **kw)
+        mm = Planet.FromGravTau(gg_cgs=gg_cgs, gamma=gamma, sig0=sig, **kw)
         dsdt = -3*mm.lum_int(mass)/(2*en)
         return [dsdt]
 
@@ -826,7 +944,7 @@ def evolve_plot():
     #for t1 in t1s:
         sig_time = evolve(ts, mass, sig0=sig, gg_cgs=gg, t1_cgs=t1, **params)
 
-        mms = [PlanetFromGrav(sig0=the_sig, gg_cgs=gg, t1_cgs=t1, **params)
+        mms = [Planet.FromGravTau(sig0=the_sig, gg_cgs=gg, t1_cgs=t1, **params)
               for the_sig in sig_time]
         
         pl.subplot(2,3,1)
@@ -882,8 +1000,8 @@ def plot_grav(tints=logspace(1,3,30)):
     
     result = []
     for tint in tints:
-        mm = PlanetFromFluxTemp(t1_cgs=69, k1=100, t2_cgs=105, k2=0.06, t0_cgs=191, tint_cgs=tint, p0_cgs=1.1*1e6, nn=2, alpha=0.85, gamma=1.4, dd=1.5, kappa_cgs=0.2, gravity=True)
-        mm = PlanetFromFluxTau(tint_cgs=tint, tau0=1000, sig0=9, kappa_cgs=1.0, gravity=True)
+        mm = Planet.FromFluxTemp(t1_cgs=69, k1=100, t2_cgs=105, k2=0.06, t0_cgs=191, tint_cgs=tint, p0_cgs=1.1*1e6, nn=2, alpha=0.85, gamma=1.4, dd=1.5, kappa_cgs=0.2, gravity=True)
+        mm = Planet.FromFluxTau(tint_cgs=tint, tau0=1000, sig0=9, kappa_cgs=1.0, gravity=True)
         result.append(mm.gg_cgs)
 
     pl.clf()
@@ -894,7 +1012,7 @@ def plot_t0(tints=logspace(1,4,30)):
     
     result = []
     for tint in tints:
-        mm = PlanetFromFluxTau(tint_cgs=tint, tau0=1000, sig0=9, kappa_cgs=1.0, gravity=True)
+        mm = Planet.FromFluxTau(tint_cgs=tint, tau0=1000, sig0=9, kappa_cgs=1.0, gravity=True)
         result.append(mm.t0_cgs)
 
     pl.clf()
@@ -1001,7 +1119,7 @@ def fig1():
         row = [] 
         for tau0 in tau0s:
             alpha = fbon*nn*gamma/(4.0*(gamma-1))
-            mm = PlanetFromFluxTau(tint_cgs=teff, t1_cgs=0, t2_cgs=0, k1=0, k2=0, 
+            mm = Planet.FromFluxTau(tint_cgs=teff, t1_cgs=0, t2_cgs=0, k1=0, k2=0, 
                         tau0=tau0, nn=nn, alpha=alpha, gamma=gamma, dd=dd, relaxed=True)
 
             row.append(mm.tau_rc)
@@ -1031,7 +1149,8 @@ def fig2():
     result = [] 
     for fbon in fbons:
         alpha = fbon*nn*gamma/(4.0*(gamma-1))        
-        mm = PlanetFromFluxTau(tint_cgs=teff, t1_cgs=0, t2_cgs=0, k1=0, k2=0, tau0=tau0, nn=nn, alpha=alpha, gamma=gamma, dd=dd)
+        mm = Planet.FromFluxTau(tint_cgs=teff, t1_cgs=0, t2_cgs=0, k1=0, k2=0, 
+                                tau0=tau0, nn=nn, alpha=alpha, gamma=gamma, dd=dd)
         result.append(mm.tau_rc)
     result = asarray(result)
 
@@ -1075,18 +1194,15 @@ def fig3():
     
     for kod,cc in zip(kods, cols):
         kk = dd*kod
-        print kk
-        mm = PlanetFromFluxTau(tint_cgs=tint, t1_cgs=t1, k1=kk, tau0=tau0, p0_cgs=p0, nn=nn,
-                    alpha=alpha, gamma=gamma, dd=dd, kappa_cgs=kappa, gravity=True, relaxed=True)
+        mm = Planet.FromFluxTau(tint_cgs=tint, t1_cgs=t1, k1=kk, tau0=tau0, p0_cgs=p0, nn=nn,
+                    alpha=alpha, gamma=gamma, dd=dd, relaxed=True)
         # NOTE -- they seem to be plotting temperature from the
         # radiative solution, even though they just say that they're
         # temperature profiles.
         xx = (mm.temp_rad(taus)/t1)**4
         xx2 = (mm.temp(taus)/t1)**4
-        print kk, mm.tau_rc
         # NOTE -- they use power law for pressure throughout the model.
-        #yy = mm.pressure(taus)/p0
-        yy = mm.pressure_conv(taus)/p0
+        yy = mm.pressure(taus)/p0
         pl.loglog(xx,yy, c=cc)
         #pl.loglog(xx2,yy, c=cc, ls=':')
 
@@ -1116,21 +1232,20 @@ def fig4():
         result = []
         for kod in kods:
             kk = kod*dd
-            mm = PlanetFromFluxTau(tint_cgs=tint, k1=kk, nn=nn,
+            mm = Planet.FromFluxTau(tint_cgs=tint, k1=kk, nn=nn,
                         t1_cgs=t1, tau0=tau0, p0_cgs=p0,
-                        alpha=alpha, gamma=gamma, dd=dd, kappa_cgs=kappa, gravity=False)
+                        alpha=alpha, gamma=gamma, dd=dd)
             # I think I'm supposed to just find the pressure if it
             # were radiative, to find out if the region is convective
             # or not.
             tt = mm.temp_rad(taus)
             # NOTE -- they seem to use the power law for pressure
             # throughout the model.
-            # pp = mm.pressure_rad_hypothetical(taus)
-            pp = mm.pressure_conv(taus)
+            pp = mm.pressure(taus)
             log_deriv = diff(log(tt))/diff(log(pp))
-            pl.figure(2)
-            pl.semilogx(lave(pp), log_deriv)
-            pl.figure(1)
+            # pl.figure(2)
+            # pl.semilogx(lave(pp), log_deriv)
+            # pl.figure(1)
             result.append(log_deriv.max())
         pl.semilogx(kods, result)
         
@@ -1162,7 +1277,7 @@ def fig5(fbon):
         row = [] 
         for dtau0 in dtau0s:
             tau0 = dtau0/dd
-            mm = PlanetFromFluxTau(tint_cgs=tint, t1_cgs=t1, k1=kk, tau0=tau0,
+            mm = Planet.FromFluxTau(tint_cgs=tint, t1_cgs=t1, k1=kk, tau0=tau0,
                         nn=nn, alpha=alpha, gamma=gamma, dd=dd, relaxed=True)
             row.append(dd*mm.tau_rc)
         result.append(row)
@@ -1199,8 +1314,8 @@ def fig6():
     pl.clf()
     for kod in kods:
         kk = kod*dd
-        mm = PlanetFromFluxTau(tint_cgs=ti, t1_cgs=t1, k1=kk, tau0=tau0, p0_cgs=p0, nn=nn,
-                    alpha=alpha, gamma=gamma, dd=dd, kappa_cgs=kappa, gravity=True, relaxed=True)
+        mm = Planet.FromFluxTau(tint_cgs=ti, t1_cgs=t1, k1=kk, tau0=tau0, p0_cgs=p0, nn=nn,
+                    alpha=alpha, gamma=gamma, dd=dd, relaxed=True)
         # NOTE -- they are plotting the radiative temp profile though 
         #xx = (mm.temp(tau)/t1)**4
         xx = (mm.temp_rad(tau)/t1)**4
@@ -1208,7 +1323,7 @@ def fig6():
         # throughout model.
         #yy = mm.pressure(tau)/p0
         #yy = mm.pressure_rad_hypothetical(tau)/p0
-        yy = mm.pressure_conv(tau)/p0
+        yy = mm.pressure(tau)/p0
         pl.loglog(xx,yy)
         
     pl.ylim(1e3,0.05)
@@ -1242,13 +1357,13 @@ def fig7():
         row = []
         for fratio in fratios:
             t1 = tint*fratio**0.25
-            mm = PlanetFromFluxTau(tint_cgs=tint, t1_cgs=t1, k1=kk, tau0=tau0, sig0=None, p0_cgs=p0,
-                        nn=nn, alpha=alpha, gamma=gamma, dd=dd, kappa_cgs=kappa, gravity=False, relaxed=True)
+            mm = Planet.FromFluxTau(tint_cgs=tint, t1_cgs=t1, k1=kk, tau0=tau0, sig0=None, p0_cgs=p0,
+                        nn=nn, alpha=alpha, gamma=gamma, dd=dd, relaxed=True)
             tt = mm.temp_rad(tau)
             # NOTE -- they seem to use power law expression for
             # pressure throughout region.
             #pp = mm.pressure_rad_hypothetical(tau)
-            pp = mm.pressure_conv(tau)
+            pp = mm.pressure(tau)
             limit = (gamma-1)/gamma
             lderiv = diff(log(tt))/diff(log(pp))
             convecting = (lderiv > limit)
@@ -1280,10 +1395,10 @@ def fig8_9():
     kappa=0.2
     
     common = dict(tint_cgs=0, t1_cgs=t1, k1=0, t0_cgs=730, p0_cgs=92*1e6, alpha=0.8,
-                  gamma=1.3, dd=dd, kappa_cgs=kappa, gravity=True)
+                  gamma=1.3, dd=dd)
 
-    m1 = PlanetFromFluxTemp(nn=1, **common)
-    m2 = PlanetFromFluxTemp(nn=2, **common)
+    m1 = Planet.FromFluxTemp(nn=1, **common)
+    m2 = Planet.FromFluxTemp(nn=2, **common)
 
     print "Model 1", m1.tau_rc, m1.tau0
     print "Model 2", m2.tau_rc, m2.tau0
@@ -1296,8 +1411,8 @@ def fig8_9():
     #pl.semilogy(m2.temp(tau2), 1e-6*m2.pressure(tau2))
     # NOTE -- they seem to use power law for pressure throughout
     # model.
-    pl.semilogy(m1.temp(tau1), 1e-6*m1.pressure_conv(tau1))
-    pl.semilogy(m2.temp(tau2), 1e-6*m2.pressure_conv(tau2))
+    pl.semilogy(m1.temp(tau1), 1e-6*m1.pressure(tau1))
+    pl.semilogy(m2.temp(tau2), 1e-6*m2.pressure(tau2))
     pl.ylim(1e2, 1e-2)
     pl.xlim(150, 800)
     pl.draw()
@@ -1306,8 +1421,7 @@ def fig8_9():
     pl.clf()
 
     # NOTE -- they seem to always use power law for pressure
-    #pp = 1e-6*m1.pressure(tau1)
-    pp = 1e-6*m1.pressure_conv(tau1)
+    pp = 1e-6*m1.pressure(tau1)
     rad = tau1 < m1.tau_rc
     conv = tau1 >= m1.tau_rc
     # red for stuff in the convective zone
@@ -1322,7 +1436,7 @@ def fig8_9():
     pl.semilogy(1e-3*m1.frad_up_rad(tau1[rad]), pp[rad], 'b-')
     pl.semilogy(1e-3*m1.frad_down_rad(tau1[rad]), pp[rad], 'b--')
 
-    p_rc = 1e-6*m1.pressure_conv(m1.tau_rc)
+    p_rc = 1e-6*m1.pressure(m1.tau_rc)
     pl.plot([0, 800], [p_rc, p_rc], 'k')
     pl.xlim(0, 800)
     pl.ylim(2, 0.01)
@@ -1336,14 +1450,11 @@ def fig10_11():
     def to_temp(xx):
         return (xx*1e3/sigma_cgs)**0.25
 
-    common = dict(tint_cgs=to_temp(5.4), p0_cgs=1.1*1e6, nn=2, alpha=0.85, gamma=1.4, tau0=6.0, dd=dd, kappa_cgs=kappa, gravity=False)
+    common = dict(tint_cgs=to_temp(5.4), p0_cgs=1.1*1e6, nn=2, alpha=0.85, gamma=1.4, tau0=6.0, dd=dd)
 
-    #m1 = PlanetFromFluxTemp(t1_cgs=0, k1=0, t2_cgs=to_temp(8.3), k2=0, t0_cgs=165, **common)
-    #m2 = PlanetFromFluxTemp(t1_cgs=0, k1=0, t2_cgs=to_temp(8.3), k2=0, t0_cgs=168, **common)
-    #m3 = PlanetFromFluxTemp(t1_cgs=to_temp(1.3), k1=100, t2_cgs=to_temp(7.0), k2=0.06, t0_cgs=191, **common)
-    m1 = PlanetFromFluxTau(t1_cgs=0, k1=0, t2_cgs=to_temp(8.3), k2=0, **common)
-    m2 = PlanetFromFluxTau(t1_cgs=0, k1=0, t2_cgs=to_temp(8.3), k2=0, **common)
-    m3 = PlanetFromFluxTau(t1_cgs=to_temp(1.3), k1=100, t2_cgs=to_temp(7.0), k2=0.06, **common)
+    m1 = Planet.FromFluxTau(t1_cgs=0, k1=0, t2_cgs=to_temp(8.3), k2=0, **common)
+    m2 = Planet.FromFluxTau(t1_cgs=0, k1=0, t2_cgs=to_temp(8.3), k2=0, **common)
+    m3 = Planet.FromFluxTau(t1_cgs=to_temp(1.3), k1=100, t2_cgs=to_temp(7.0), k2=0.06, **common)
     
     print "Model 1", m1.tau_rc, m1.tau0, m1.t0_cgs
     print "Model 2", m2.tau_rc, m2.tau0, m2.t0_cgs
@@ -1354,9 +1465,9 @@ def fig10_11():
     tau = logspace(-6, 2, 100)
     # NOTE -- they always use power law for pressure
     # NOTE -- model 1 explicitly disallows convection, so only plot radiative temp.
-    pl.semilogy(m1.temp_rad(tau), 1e-6*m1.pressure_conv(tau))
-    pl.semilogy(m2.temp(tau), 1e-6*m2.pressure_conv(tau))
-    pl.semilogy(m3.temp(tau), 1e-6*m3.pressure_conv(tau))
+    pl.semilogy(m1.temp_rad(tau), 1e-6*m1.pressure(tau))
+    pl.semilogy(m2.temp(tau), 1e-6*m2.pressure(tau))
+    pl.semilogy(m3.temp(tau), 1e-6*m3.pressure(tau))
     pl.ylim(1e0, 1e-3)
     pl.xlim(100, 200)
     pl.draw()
@@ -1365,7 +1476,7 @@ def fig10_11():
     pl.clf()
 
     # NOTE -- they always use power law for pressure
-    pp = 1e-6*m3.pressure_conv(tau)
+    pp = 1e-6*m3.pressure(tau)
     rad = tau < m3.tau_rc
     conv = tau >= m3.tau_rc
     pl.semilogy(1e-3*m3.frad_down_conv(tau[conv]), pp[conv], 'r--')
@@ -1382,7 +1493,7 @@ def fig10_11():
     pl.semilogy(1e-3*m3.frad_net_conv(tau[conv]), pp[conv], 'c--')
                 
     # NOTE -- they always use power law for pressure
-    p_rc = 1e-6*m3.pressure_conv(m3.tau_rc)
+    p_rc = 1e-6*m3.pressure(m3.tau_rc)
     pl.plot([0,20], [p_rc, p_rc], 'k')
     pl.xlim(0, 20)
     pl.ylim(1, 0.001)
@@ -1398,16 +1509,16 @@ def fig12_13():
     dd = 1.5
     kappa = 0.2
     
-    mm = PlanetFromFluxTau(tint_cgs=0, t1_cgs=to_temp(1.5), k1=120, t2_cgs=to_temp(1.1), k2=0.2, tau0=5.3,
-           p0_cgs=1.5*1e6, nn=4/3.0, alpha=0.77, gamma=1.4, dd=dd, kappa_cgs=kappa, gravity=False, relaxed=True)
+    mm = Planet.FromFluxTau(tint_cgs=0, t1_cgs=to_temp(1.5), k1=120, t2_cgs=to_temp(1.1), k2=0.2, 
+                 tau0=5.3, p0_cgs=1.5*1e6, nn=4/3.0, alpha=0.77, gamma=1.4, dd=dd, relaxed=True)
 
     print "Model", mm.tau_rc, mm.tau0, mm.t0_cgs
 
-    pl.clf()
     pl.figure(1)
+    pl.clf()
     tau = logspace(-4, 2, 100)
     # NOTE -- they always use power law for pressure
-    pl.semilogy(mm.temp(tau), 1e-6*mm.pressure_conv(tau))
+    pl.semilogy(mm.temp(tau), 1e-6*mm.pressure(tau))
     pl.ylim(1e0, 1e-3)
     pl.xlim(60, 180)
     pl.draw()
@@ -1416,7 +1527,7 @@ def fig12_13():
     pl.clf()
 
     # NOTE -- they always use power law for pressure
-    pp = 1e-6*mm.pressure_conv(tau)
+    pp = 1e-6*mm.pressure(tau)
     rad = tau < mm.tau_rc
     conv = tau >= mm.tau_rc
     # red for stuff in the convective zone
@@ -1440,7 +1551,7 @@ def fig12_13():
     pl.semilogy(1e-3*mm.frad_net_conv(tau[conv]), pp[conv], 'c--')
     
     # NOTE -- they always use power law for pressure
-    p_rc = 1e-6*mm.pressure_conv(mm.tau_rc)
+    p_rc = 1e-6*mm.pressure(mm.tau_rc)
     pl.plot([0,20], [p_rc, p_rc], 'k')
     pl.xlim(0, 4)
     pl.ylim(1.5, 0.001)
@@ -1472,6 +1583,33 @@ def lave(a, n=1, axis=-1):
     """As ave(), but do the averaging in log space (so that you get
     geometric means instead of arithmetic means)"""
     return exp(ave(log(a), n=n, axis=axis))
+
+###################################################
+## Function Argument conveniences
+def dictUnion(*ds, **kw):
+    """Combine several dicts and keywords into one dict.  I use this
+    for argument processing where I want to set defaults in several
+    places, sometimes overriding values.  The common case is something
+    like:
+    
+    values = dictUntion(global_defaults, local_defaults, key1=val1, key2=val2)
+
+    where global_defaults and local_defaults are dicts where
+    local_defaults overrides global_defaults, and key1 and key2
+    override anything in either of the values."""
+    
+    # Last one wins.  For sense is something like:    
+    # dictUntion(system_defaults, user_defaults, override1=blah, ...)
+    iters = [d.iteritems() for d in ds] + [dict(**kw).iteritems()]
+    return dict(itertools.chain(*iters))
+
+def popKeys(d, *names):
+    return dict([(k, d.pop(k)) for k in names if k in d])
+
+def removeKeys(d, *names):
+    [d.pop(k)
+     for k in names if k in d]
+    return d
 
 ##############################
 ## playing around
