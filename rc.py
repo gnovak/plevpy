@@ -206,7 +206,7 @@ class Planet:
 
         # Parameters that aren't very important
         self.kmin = 1e-3
-        self.verbose = True
+        self.verbose = 2
 
     def __init_solve__(s, tau0=None, t0_cgs=None, dtau_rc=None, sig0=None, 
                        p0_cgs=None, relaxed=False):
@@ -298,7 +298,8 @@ class Planet:
 
         # per DSP's complaint regarding tlusty, try to make this
         # bulletproof (but don't allow an infinite loop)
-        taul, tauh = s.tau0, s.tau0
+        tau_est = s._estimate_large_tau_rc()
+        taul, tauh = tau_est, tau_est
         while ff(taul) < 0 and 2*taul != taul: taul /= 2.0
         while ff(tauh) > 0 and 2*tauh != tauh: tauh *= 2.0
         if s.verbose >=2: print "Starting at", taul, tauh, ff(taul), ff(tauh)
@@ -1697,10 +1698,10 @@ def plot_multiple_solutions():
     nn = 1.0
     gamma = 1.67
 
-    fbon = 0.72
+    fbon = 0.5
     alpha = fbon*nn*gamma/(4.0*(gamma-1))
     kw = dict(dd=dd, nn=nn, gamma=gamma, 
-              tau0=1100, tint_cgs=100, sig0=10)
+              tau0=2000, tint_cgs=100, sig0=10)
     mm = Planet(alpha=alpha, k1=0.1, t1_cgs=130, **kw)
     ftot = mm.f1_cgs + mm.f2_cgs + mm.fint_cgs
 
