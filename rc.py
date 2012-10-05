@@ -259,7 +259,8 @@ class Planet:
 
         # per DSP's complaint, try to make this bulletproof (but don't
         # allow an infinite loop)
-        taul, tauh = 1.0, 1.0
+        tau_est = s._estimate_large_tau_rc()
+        taul, tauh = tau_est, tau_est
         while ff(taul) < 0 and 2*taul != taul: taul /= 2.0
         while ff(tauh) > 0 and 2*tauh != tauh: tauh *= 2.0
 
@@ -297,7 +298,7 @@ class Planet:
 
         # per DSP's complaint regarding tlusty, try to make this
         # bulletproof (but don't allow an infinite loop)
-        taul, tauh = 1.0, 1.0
+        taul, tauh = s.tau0, s.tau0
         while ff(taul) < 0 and 2*taul != taul: taul /= 2.0
         while ff(tauh) > 0 and 2*tauh != tauh: tauh *= 2.0
         if s.verbose >=2: print "Starting at", taul, tauh, ff(taul), ff(tauh)
@@ -487,6 +488,12 @@ class Planet:
         return result
     
 ## My Extensions
+    def _estimate_large_tau_rc(s):
+        """Estimate of tau_rc for large tau_rc, valid when only energy
+        source is internal.  Use this as a guide for the routine that
+        finds tau_rc."""
+        return 1/(s.nn/(4.0*s.beta) - 1)
+
     def lum(s, mm_cgs):
         """Luminosity from all sources at the top of the atmosphere.
         This is the only place that mass enters into the model, so
