@@ -89,6 +89,7 @@ import pylab as pl
 
 import structure
 
+exts = ['png', 'eps', 'pdf']
 sigma_cgs = 5.67e-5
 G_cgs = 6.67e-8  # Only enters into calculating the luminosity
 
@@ -1537,3 +1538,165 @@ def gamma_approx_plot():
         pl.loglog(xs, xs**(aa-1)*exp(-xs), c=cc, ls='--')
     pl.ylim(1e-3,None)
     pl.draw()
+
+#   gg_cgs kappa_cgs dgg dtint
+def plot1():
+#  arbitrary tau0 
+#  inputs tint_cgs sig0 nn alpha gamma dd 
+#  outputs t0_cgs tau_rc 
+
+# tau_rc: 
+# t0: 
+# 
+# tau_rc: not a function of sig0, tint
+# t0: not a function of sig0
+# 
+# tau_rc: ~ 
+#   nn: step function, 
+#   alpha: step function 
+#   gamma: step function
+#   dd: gently falling
+#   sig0: no dependence
+#   tint: no dependence    
+#  
+# t0:
+#    ~linear with tint
+#    nn: falling
+#    alpha: rises
+#    gamma: rises, first as ~x^2, then linearly
+#    dd: gently rises
+#    sig0: no dependence
+
+    xs = linspace(0.99,1.01,100)
+    ms = [Planet(tint_cgs=100, sig0=10, tau0=10000, nn=xx) for xx in xs]
+    rc = array([mm.tau_rc for mm in ms])
+    t0 = array([mm.t0_cgs for mm in ms])
+
+    pl.plot(xs, t0)
+    pl.draw()
+
+def plot_isolated_planet(tau_rc=True, filename=None):
+    # no radiation
+    fbons = linspace(0.1, 1.0, 100)
+
+    # shouldn't matter
+    dd = 1.5 
+    nn = 1.0
+    gamma = 1.67
+    
+    kw = dict(dd=dd, nn=nn, gamma=gamma, 
+              tau0=1000, tint_cgs=100, sig0=10)
+
+    def Gamma(a,x):
+        return scipy.special.gamma(a)*scipy.special.gammaincc(a,x)
+
+    def ff(tau_rc, fbon):
+        return (exp(dd*tau_rc) * (dd*tau_rc)**(-fbon) * Gamma(1+fbon, dd*tau_rc) - 
+                (2+dd*tau_rc)/(1+dd*tau_rc))
+
+    result, rmod, rlow, rhigh, rt0 = [], [], [], [], []
+    for fbon in fbons:
+
+        low = (0.5*scipy.special.gamma(1+fbon))**(1.0/fbon)
+        high = fbon/(1-fbon)
+        rlow.append(low)
+        rhigh.append(high)
+
+        alpha = fbon*nn*gamma/(4.0*(gamma-1))
+        
+        mm = Planet(alpha=alpha, **kw)
+                    
+        rmod.append(mm.tau_rc)
+        rt0.append(mm.t0_cgs)
+
+        rr = scipy.optimize.bisect(ff, 1e-5, 1e3, args=(fbon,))
+        result.append(rr)
+
+    if tau_rc: 
+        pl.clf()
+        pl.semilogy(fbons, rmod)
+        # pl.plot(fbons, result)
+        pl.plot(fbons, rlow)
+        pl.plot(fbons, rhigh)
+        pl.xlabel(r'$4\beta/n$')
+        pl.ylabel(r'$\tau_{RC}$')
+    else:
+        pl.clf()
+        pl.plot(fbons, rt0)
+        pl.xlabel(r'$4\beta/n$')
+        pl.ylabel(r'$T_0$')
+        
+    if filename: [pl.savefig(filename +'.'+ext) for ext in exts]
+
+
+def plot_single_channel(filename=None):
+    fbons = linspace(0.1, 1.0, 100)
+
+    # shouldn't matter
+    dd = 1.5
+    nn = 1.0
+    gamma = 1.67
+
+    tints = (70, 100, 130)
+
+    kw = dict(dd=dd, nn=nn, gamma=gamma, 
+              # these also shouldn't matter
+              tau0=1100, tint_cgs=100, sig0=10)
+
+    def Gamma(a,x):
+        return scipy.special.gamma(a)*scipy.special.gammaincc(a,x)
+
+    ref, r1 = [], []
+
+    for fbon in fbons:
+        alpha = fbon*nn*gamma/(4.0*(gamma-1))
+        
+        mm = Planet(alpha=alpha, **kw)
+        ref.append(mm.tau_rc)
+        
+        row = []
+        for tint in tints:            
+            mm = Planet(alpha=alpha, k1=0.1, t1_cgs=tint, **kw)
+            row.append(mm.tau_rc)
+
+        r1.append(row)
+        
+    r1 = array(r1)
+
+    pl.semilogy(fbons, ref)
+    pl.semilogy(fbons, r1[:,0])
+    pl.semilogy(fbons, r1[:,1])
+    pl.semilogy(fbons, r1[:,2])
+
+    pl.xlabel(r'$4\beta/n$')
+    pl.ylabel(r'$\tau_{RC}$')
+        
+    if filename: [pl.savefig(filename +'.'+ext) for ext in exts]
+
+def plot_multiple_solutions():
+
+    def t0_from_taurc(xx):
+        return mm.temp_rad(xx)*(mm.tau0/xx)**(mm.beta/mm.nn)
+
+    def ff(xx):
+        t0 = t0_from_taurc(xx)
+        value =  (mm.frad_up_conv(xx, t0=t0) - mm.frad_up_rad(xx))
+        return value/ftot
+
+    # shouldn't matter
+    dd = 1.5
+    nn = 1.0
+    gamma = 1.67
+
+    fbon = 0.72
+    alpha = fbon*nn*gamma/(4.0*(gamma-1))
+    kw = dict(dd=dd, nn=nn, gamma=gamma, 
+              tau0=1100, tint_cgs=100, sig0=10)
+    mm = Planet(alpha=alpha, k1=0.1, t1_cgs=130, **kw)
+    ftot = mm.f1_cgs + mm.f2_cgs + mm.fint_cgs
+
+    taus = logspace(-1,10, 1000)
+    val = array([ff(tau) for tau in taus])
+    pl.clf();
+    pl.loglog(taus, val, 'b')
+    pl.loglog(taus, -val, 'r')
