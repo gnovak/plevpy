@@ -506,6 +506,8 @@ class Planet:
             raise ValueError, "Reference optical depth is too low"
         if s.tau0 < 5.0:
             raise ValueError, "Reference optical depth is too low"
+        if s.beta > 1: 
+            raise ValueError, "Beta > 1, this is suspect."
 
 class PlanetGrav(Planet):
     """Planet that knows about gravity and hydrostatic equilibrium.
