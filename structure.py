@@ -220,13 +220,6 @@ Gamma_e, Gamma_p = number of degrees of freedom for electrons and
 method = scheme for finding desired value of entropy.  Can be 'bisect' or 'newton' 
 """
     rhos, sigmas, pp, tt = eos_gsn_tables(**kw)
-
-    pylab.clf()
-    pylab.pcolormesh(rhos, sigmas, np.log10(pp).transpose(), vmin=0)
-    pylab.xscale('log')
-    pylab.yscale('log')
-    pylab.colorbar()
-    
     return interp_rect_spline(rhos,sigmas,tt,logx=True, logy=True, logz=True)
 
 def pressure_gsn_one_nn_kt(nn, tt, mm, ff, nexp, Gamma, _hbar, _cc):
@@ -500,6 +493,201 @@ def eos_gsn_tables_internal(rhos=np.logspace(-6,20,50),
     return rhos, sigmas, pp, tt
 
 eos_gsn_tables = memoize(eos_gsn_tables_internal)
+
+def eos_gsn_pt(**kw):
+    """Return a function that computes density and a function that
+computes entropy, both as a function of pressure and temperature based
+on interpolation on a grid that's rectangular in pressure and
+temperature.
+
+ps = pressure values for interpolation grid
+ts = temperaturevalues for interpolation grid
+_mp = proton mass
+_me = electron mass
+_hbar = planck constant
+_cc = speed of light
+ff_e, nexp_e, ff_p, nexp_p = controls where and how steeply the
+   physics changes for protons and electrons.  See
+   pressure_gsn_one_nn_kt()
+Gamma_e, Gamma_p = number of degrees of freedom for electrons and
+   protons as they become relativistic.  This could be a function, but
+   for now is a constant.
+method = scheme for finding desired value of density.  Can be 'bisect' or 'newton' 
+"""
+
+    pp, tt, nn, sigmas  = eos_gsn_pt_tables(**kw)
+    nn_pt = interp_rect_spline(pp,tt,nn,logx=True, logy=True, logz=True)
+    sig_pt = interp_rect_spline(pp,tt,sigmas,logx=True, logy=True, logz=False)
+    return nn_pt, sig_pt
+
+# Excluding where electrons become relativistic (b/c pressure doesn't
+# depend on density anymore) and setting min and max pressures by
+# pressure when electrons go relativistic (10^23) and at cosmic
+# density at the min temperature (10^-21) gives the limits: 
+# ps=np.logspace(-21,23,8), 
+# ts=np.logspace(0,9,6),                                
+def eos_gsn_pt_tables_internal(ps=np.logspace(-5,15,30), 
+                               ts=np.logspace(0,6,30), 
+                               _mp=mp, _me=me, _cc=cc, _hbar=hbar,
+                               method='bisect', 
+                               **kw):
+    """As eos_gsn_tables_internal, except taking pressure and
+    temperature to be the independent variables rather than density
+    and entropy.
+
+    Equation of state taking into account ideal gas pressure,
+    degeneracy pressure, relativistic degeneracy pressure, and
+    relativistic gas pressure.  You can move around the boundaries
+    where the physics switches between one expression and another via
+    ff_e and ff_p.  The idea is to say things like 'how would it
+    change the radius/mass relation if I turn off electron degneracy
+    pressure?'  This set of functions uses an entirely separate set of
+    physics constants _me, _mp, _cc, and _hbar, and tries to pass them
+    around appropriately so that you can change the physics constants
+    and draw plots of things like what happens when you change the
+    speed of light (to see what relativistic effects are
+    contributing.
+
+    This draws a regular grid in pressure and temperature and then uses
+    newton's method or bisection to find the temperature that gives
+    the desired density.  This makes interpolation on the resulting
+    grid trivial.
+
+    This function just makes the interpolation tables to facilitate
+    storing them since it takes a little time to generate a fine grid.
+
+    Extra args passed to entropy_gsn_nn_kt(), pressure_gsn_nn_kt()"""
+
+    def the_ff(log_nn):
+        """The function of which we're finding a root"""
+        result = np.log(the_pp(np.exp(log_nn), tt)) - np.log(desired_pressure)
+        return result
+
+    def init(desired_pressure, tt):
+        """Make an initial guess for the density"""        
+        # electron rest energy
+        e_rest = _me*_cc**2
+
+        nn_ideal_gas = desired_pressure / (kB*tt)
+        nn_degen_nonrel = (30*_me*desired_pressure / 
+                           (3**0.66*np.pi**1.33*_hbar**2))**(3/5.0)
+        nn_degen_rel = (4*desired_pressure / 
+                        (3**1.33*np.pi**0.66*_hbar*_cc))**0.75
+        # If the temperature gives relativistic electrons, the density
+        # can have any value
+        if (kB*tt) > e_rest: 
+            print "Warning, pressure is not a function of density in relativistic regime."
+            return np.nan
+        # Compute fermi energy under different assumptions
+        ef_ideal_gas = _hbar**2*nn_ideal_gas**(2/3.0)/(2*_me)
+        ef_nonrel = _hbar**2*nn_degen_nonrel**(2/3.0)/(2*_me)
+        ef_rel = _hbar*_cc*nn_degen_rel**(1/3.0)
+
+        ideal = ef_ideal_gas < e_rest and ef_ideal_gas < kB*tt
+        degen_nonrel = ef_nonrel < e_rest and ef_nonrel > kB*tt
+        degen_rel = ef_rel > e_rest and ef_rel > kB*tt
+        
+        if ((ideal and degen_nonrel) or (ideal and degen_rel) or (degen_nonrel and degen_rel)):
+            print "Warning, more than one set of assumptions satisfied"
+        elif not (ideal or degen_nonrel or degen_rel):
+            print "Warning, no set of assumptions satisfied"
+
+        if degen_rel:
+            return np.log(nn_degen_rel)
+        elif degen_nonrel: 
+            return np.log(nn_degen_nonrel)
+        else: 
+            return np.log(nn_ideal_gas)
+        
+    def find_root_newton(log_nn0, tt):
+        """Find the temperature using newton's method."""
+        try: 
+            log_nn = scipy.optimize.newton(the_ff, log_nn0)
+            nn = np.exp(log_nn)
+            sig = the_ss(nn, tt)
+        except RuntimeError: 
+            nn = np.nan
+            sig = np.nan
+        return nn, sig
+
+    def find_root_bisect(log_nn0, tt):
+        """Find the temperature using bisection"""
+        delta = 1.0
+        # initial guess at range
+        log_nnl, log_nnh = log_nn0, (log_nn0+delta)
+
+        # expand range until it includes the root
+        nplus, nminus = 0,0
+        while(the_ff(log_nnh) < 0):
+            log_nnh += delta
+            nplus += 1
+        while(the_ff(log_nnl) > 0):
+            log_nnl -= delta
+            nminus += 1
+
+        # find the root
+        log_nn = scipy.optimize.bisect(the_ff, log_nnl, log_nnh, 
+                                        xtol=1e-5, rtol=1e-5)
+        nn = np.exp(log_nn)
+        sig = the_ss(nn, tt)
+        return nn, sig
+    
+    def clean_nans(aa):         
+        """Newton's method sometimes fails and I've put nans into the
+        array in that case.  Try to interpolate from neighboring
+        values to remove them."""
+        # nan is the only thing that's not equal to itself
+        # This is a pain... edges/corners require special handling, can have bad cells next to each other
+        ii,jj = np.nonzero(aa!=aa)
+        nn = len(ii)
+        if nn != 0: 
+            print "Warning: structure.py: Fixing", nn, "failed points"
+            if ((ii==0) | (jj==0) | (ii==aa.shape[0]-1) | (jj==aa.shape[1]-1)).any():
+                raise RuntimeError, "structure.py: Don't know how to fix failed edge points"
+            # arithmetic mean
+            # aa[ii,jj] = 0.25*(aa[ii+1,jj] + aa[ii-1,jj] + aa[ii,jj+1] + aa[ii,jj-1])
+            # geometric mean
+            aa[ii,jj] = (aa[ii+1,jj]*aa[ii-1,jj]*aa[ii,jj+1]*aa[ii,jj-1])**0.25
+            if (aa!=aa).any():
+                raise RuntimeError, "structure.py: Don't know how to fix adjacent failed points"
+        return aa
+    
+    if method.lower()=='newton': find_root = find_root_newton
+    elif method.lower()=='bisect': find_root = find_root_bisect
+    else: raise RuntimeError, "Unknown root finding method!"
+
+    # Do a copy here to prevent a mutable copy of a default arg from
+    # escaping into the wild.
+    ps, ts = np.array(ps), np.array(ts)
+
+    the_pp = pressure_gsn_nn_kt(_mp=_mp, _me=_me, _cc=_cc, _hbar=_hbar, **kw)    
+    the_ss = entropy_gsn_nn_kt(_mp=_mp, _me=_me, _cc=_cc, _hbar=_hbar, **kw)
+
+    # natural input -- density, temperature
+    # natural output -- pressure, entropy
+    # desired input -- pressure, temperature
+    # desired output -- density entropy
+    # therefore iterate on _density_ to match _pressure_
+
+    # construct tables
+    nns, sigmas = [], []
+    for desired_pressure in ps:
+        nn_row, sigma_row = [], []
+        for tt in ts:
+            log_nn0 = init(desired_pressure, tt)
+            nn_val, sigma_val = find_root(log_nn0, tt)
+            
+            nn_row.append(nn_val)
+            sigma_row.append(sigma_val)
+        nns.append(nn_row)
+        sigmas.append(sigma_row)
+
+    nns, sigmas = np.array(nns), np.array(sigmas)
+    nns, sigmas = clean_nans(nns), clean_nans(sigmas)
+
+    return ps, ts, nns, sigmas
+
+eos_gsn_pt_tables = memoize(eos_gsn_pt_tables_internal)
 
 ##############################
 ### Find and plot regions where relevant physics for protons and
