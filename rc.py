@@ -128,13 +128,13 @@ def test(long=False):
     # Gravity model w/ constant functional opacity
     kap = lambda x,y: 0*x + 0*y + 0.2
     if long:
-        mm = PlanetGrav.FromFluxTau(tau0=1000, sig0=9, kappa_cgs=0.2, **kw)
+        mm = PlanetGrav(tau0=1000, sig0=9, kappa_cgs=0.2, **kw)
         model_test(mm)
-        mm = PlanetGrav.FromFluxTau(tau0=1000, p0_cgs=4.5e6, kappa_cgs=0.2, **kw)
+        mm = PlanetGrav(tau0=1000, p0_cgs=4.5e6, kappa_cgs=0.2, **kw)
         model_test(mm)
-        mm = PlanetGrav.FromFluxTemp(t0_cgs=100, sig0=9, kappa_cgs=0.2, **kw)
+        mm = PlanetGrav(t0_cgs=100, sig0=9, kappa_cgs=0.2, **kw)
         model_test(mm)
-        mm = PlanetGrav.FromFluxTemp(t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=0.2, **kw)
+        mm = PlanetGrav(t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=0.2, **kw)
         model_test(mm)
 
     ##############################
@@ -152,18 +152,19 @@ def test(long=False):
 
     ##############################
     # Gravity model solving for surface with functional opacity 
-    if long:
-        mm = PlanetGrav.FromGravTau(gg_cgs=58600, tau0=1000, sig0=9, kappa_cgs=kap, **kw)
+    # This takes too long...  
+    if False and long:
+        mm = PlanetGrav(gg_cgs=58600, tau0=1000, sig0=9, kappa_cgs=kap, **kw)
         model_test(mm)
-        mm = PlanetGrav.FromGravTau(gg_cgs=58600, tau0=1000, p0_cgs=4.5e6, kappa_cgs=kap, **kw)
+        mm = PlanetGrav(gg_cgs=58600, tau0=1000, p0_cgs=4.5e6, kappa_cgs=kap, **kw)
         model_test(mm)
-        mm = PlanetGrav.FromGravTemp(gg_cgs=58600, t0_cgs=100, sig0=9, kappa_cgs=kap, **kw)
+        mm = PlanetGrav(gg_cgs=58600, t0_cgs=100, sig0=9, kappa_cgs=kap, **kw)
         model_test(mm)
-        mm = PlanetGrav.FromGravTemp(gg_cgs=58600, t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=kap, **kw)
+        mm = PlanetGrav(gg_cgs=58600, t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=kap, **kw)
         model_test(mm)
 
 def all_figs():
-    "Draw all figures form RC paper."
+    "Draw all figures from RC paper."
     fig1()  # this looks perfect to me.
     fig2()  # this looks perfect to me.
     fig3()  # this looks perfect to me.
@@ -206,7 +207,7 @@ class Planet:
 
         # Parameters that aren't very important
         self.kmin = 1e-3
-        self.verbose = 2
+        self.verbose = False
 
     def __init_solve__(s, tau0=None, t0_cgs=None, dtau_rc=None, sig0=None, 
                        p0_cgs=None, relaxed=False):
@@ -259,10 +260,14 @@ class Planet:
 
         # per DSP's complaint, try to make this bulletproof (but don't
         # allow an infinite loop)
+        # FIXME -- get a better estimate for tau_rc here.
         tau_est = s._estimate_large_tau_rc()
+        tau_est = 200.0
         taul, tauh = tau_est, tau_est
         while ff(taul) < 0 and 2*taul != taul: taul /= 2.0
         while ff(tauh) > 0 and 2*tauh != tauh: tauh *= 2.0
+        if 2*taul == taul or 2*tauh == tauh:
+            raise RuntimeError, "Couldn't find interval for root."
 
         if s.verbose >=2: print "Starting at", taul, tauh, ff(taul), ff(tauh)
         tau_rc = scipy.optimize.bisect(ff, taul, tauh, xtol=dtau_rc)
@@ -298,10 +303,14 @@ class Planet:
 
         # per DSP's complaint regarding tlusty, try to make this
         # bulletproof (but don't allow an infinite loop)
+        # FIXME -- get a better estimate for tau_rc here
         tau_est = s._estimate_large_tau_rc()
+        tau_est = 200.0
         taul, tauh = tau_est, tau_est
         while ff(taul) < 0 and 2*taul != taul: taul /= 2.0
         while ff(tauh) > 0 and 2*tauh != tauh: tauh *= 2.0
+        if 2*taul == taul or 2*tauh == tauh:
+            raise RuntimeError, "Couldn't find interval for root."
         if s.verbose >=2: print "Starting at", taul, tauh, ff(taul), ff(tauh)
         tau_rc = scipy.optimize.bisect(ff, taul, tauh, xtol=dtau_rc)
         if s.verbose >=2: print "Ending at", tau_rc, ff(tau_rc), cnt[0], "iterations"
@@ -493,7 +502,9 @@ class Planet:
         """Estimate of tau_rc for large tau_rc, valid when only energy
         source is internal.  Use this as a guide for the routine that
         finds tau_rc."""
-        return 1/(s.nn/(4.0*s.beta) - 1)
+        # FIXME -- could use a better estimate of tau_rc
+        eps = 1e-3
+        return 1/(s.nn/(4.0*s.beta) - 1 + eps)
 
     def lum(s, mm_cgs):
         """Luminosity from all sources at the top of the atmosphere.
@@ -522,12 +533,12 @@ class PlanetGrav(Planet):
     Capable of calculating surface gravity and the pressure profile
     that results from solving for hydrostatic equilibrium."""
 
-    def __init__(s, dtau_rc=1e-4, dtint=1e-2, **kw):
+    def __init__(s, dtau_rc=1e-4, dtint=1e-2, dgg=0.1, **kw):
         """Initialize model, figuring out which init code to run based
         on whether gg_cgs or tint_cgs is specified."""
-        kw_2 = removeKeys(dict(kw), 'gg_cgs', 'dgg', 'tau0', 't0_cgs', 'sig0', 'p0_cgs', 'relaxed')
+        kw_2 = removeKeys(dict(kw), 'gg_cgs', 'tau0', 't0_cgs', 'sig0', 'p0_cgs', 'relaxed')
         s.__init_simple__(**kw_2)
-        s.__init_solve__(dtau_rc=dtau_rc, dtint=dtint, **kw)
+        s.__init_solve__(dtau_rc=dtau_rc, dtint=dtint, dgg=dgg, **kw)
     
     def __init_simple__(self, kappa_cgs=None, **kw):
         """Do the part of initialization that consists only of filling
@@ -540,8 +551,8 @@ class PlanetGrav(Planet):
         if iterable(kappa_cgs):
             self._kappa_separate_p = kappa_cgs[0]
             self._kappa_separate_t = kappa_cgs[1]
-            self.kappa = lambda x,y: kappa_cgs[0](x)*kappa_cgs[1](y)
-        elif not callable(kappa_cgs): 
+            self.kappa = lambda x,y: kappa_cgs[0](x) * kappa_cgs[1](y)
+        elif not callable(kappa_cgs):
             # allow just constants, too, pressed into separable form.
             self._kappa_separate_p = lambda x: 0*asarray(x) + kappa_cgs
             self._kappa_separate_t = lambda x: 0*asarray(x) + 1.0
@@ -571,7 +582,7 @@ class PlanetGrav(Planet):
             # now that we know tint, can solve for tau_rc, etc.
             kw_2 = popKeys(dict(kw), 'tau0', 'dtau_rc', 't0_cgs', 'sig0', 'p0_cgs', 'relaxed')
             Planet.__init_solve__(s, **kw_2)
-                        
+
     def _model_from_grav(s, dtint, **kw):
         """Solve for tint_cgs given surface gravity.  This is where
         the big money is.
@@ -598,9 +609,12 @@ class PlanetGrav(Planet):
         """pressure profile in the convective region, RC eq 6"""
         return Planet.pressure(s, tau)
 
-    def pressure_rad(s, tau, use_actual):
+    def pressure_rad(s, tau, use_actual=False):        
         """pressure profile in the radiative region.  This is not
-        explicitly computed in RC.  """
+        explicitly computed in RC.  use_actual means use the temp
+        profile as computed in the convective region when the
+        transition happens.  Default is to use the radiative temp
+        profile."""
         # this requires splitting the input array in two b/c of the
         # requirement that the integration start at the rad/conv
         # boundary.
@@ -658,6 +672,15 @@ class PlanetGrav(Planet):
             pp = s.pressure_conv(tau)
             pp[tau<s.tau_rc] = pp_rad
             return pp
+
+    def _separable_pl_surface_gravity(s):
+        """When the opacity is a separable power law function of
+        pressure and temperature, you can find the surface gravity
+        using this expression.  This is here for checking
+        _analytic_surface_gravity() since there's now way to be sure
+        that the opacity is a pure PL without allowing special syntax
+        for that case."""
+        return s.p0_cgs*s.kappa(s.p0_cgs, s.t0_cgs)/(s.tau0*s.nn)
 
     def _analytic_surface_gravity(s):
         """When the opacity is a separable function of pressure and
@@ -802,7 +825,7 @@ class PlanetFromGravDirect(Planet):
 
 # Example parameters
 # evolve([0, 1e-3], 2e30, gg_cgs=9053, t1_cgs=150, k1=100, t2_cgs=105, k2=0.06, tau0=1000, sig0=13.75, nn=2, alpha=0.85, gamma=1.4, dd=1.5, kappa_cgs=0.2)
-def evolve(ts_gyr, mass, gg_cgs=None, sig0=None, gamma=1.67, **kw):
+def evolve(ts_gyr, mass, gg_cgs=None, gamma=1.67, sig0=None, **kw):
     """Idea here is that solution to lane-emden equation have cores,
     not cusps, so the mean density is an ok approx to the density
     throughout the object.  Then the entropy gives the temperature,
@@ -830,68 +853,63 @@ def evolve(ts_gyr, mass, gg_cgs=None, sig0=None, gamma=1.67, **kw):
     def derivs(yy,tt):
         sig = yy[0]
         en = efactor*exp(2*sig/3.0 - 5/3.0)
-        mm = Planet.FromGravTau(gg_cgs=gg_cgs, gamma=gamma, sig0=sig, **kw)
+        mm = PlanetGrav(gg_cgs=gg_cgs, gamma=gamma, sig0=sig0, **kw)
         dsdt = -3*mm.lum_int(mass)/(2*en)
         return [dsdt]
 
     ts = 1e9*3.15e7*asarray(ts_gyr)
     return scipy.integrate.odeint(derivs, [sig0], ts)
     
-def evolve_plot():
-    ts = linspace(0,1e1,100)
-    gg=8337
-    mass = 2e30
-    
-    pl.clf()
-    params = dict(k1=100, t2_cgs=105, k2=0.06, tau0=1000,
-                  nn=2, alpha=0.85, gamma=1.4, dd=1.5, kappa_cgs=0.2)
-    sigs = [12.75,13.75,14.75]
-    t1s = [50, 150, 250]
-    sig = 13.75
-    t1 = 150
-    
-    for sig in sigs:
-    #for t1 in t1s:
-        sig_time = evolve(ts, mass, sig0=sig, gg_cgs=gg, t1_cgs=t1, **params)
-
-        mms = [Planet.FromGravTau(sig0=the_sig, gg_cgs=gg, t1_cgs=t1, **params)
-              for the_sig in sig_time]
-        
-        pl.subplot(2,3,1)
-        pl.plot(ts, sig_time)
-        pl.subplot(2,3,2)
-        pl.semilogy(ts, [the_m.lum_int(mass) for the_m in mms])
-        pl.subplot(2,3,3)
-        pl.plot(ts, [(the_m.fint_cgs/sigma_cgs)**0.25 for the_m in mms])
-        pl.subplot(2,3,4)
-        pl.plot(ts, [the_m.temp([1.0])[0] for the_m in mms])
-        pl.subplot(2,3,5)
-        pl.plot(ts, 1e-3*array([the_m.pressure(1.0) for the_m in mms]))
-        pl.subplot(2,3,6)
-        pl.plot(ts, [the_m.tau_rc for the_m in mms])
+def plot_model_evolution(mass, mms): 
+    """Plot the luminosity, entropy, etc for a single model evolved
+    through time."""
 
     pl.subplot(2,3,1)
+    pl.plot(ts, sig_time)
     pl.xlabel('t (gyr)')        
     pl.ylabel('sigma')
+
     pl.subplot(2,3,2)
+    pl.semilogy(ts, [the_m.lum_int(mass) for the_m in mms])
     pl.xlabel('t (gyr)')        
     pl.ylabel('L (erg/s)')
+
     pl.subplot(2,3,3)
+    pl.plot(ts, [(the_m.fint_cgs/sigma_cgs)**0.25 for the_m in mms])
     pl.ylabel('T_int (K)')    
     pl.xlabel('t (gyr)')
+
     pl.subplot(2,3,4)
+    pl.plot(ts, [the_m.temp([1.0])[0] for the_m in mms])
     pl.xlabel('t (gyr)')        
     pl.ylabel('T(tau=1) (K)')
+
     pl.subplot(2,3,5)
+    pl.plot(ts, 1e-3*array([the_m.pressure(1.0) for the_m in mms]))
     pl.ylabel('P(tau=1) (mbar)')    
     pl.xlabel('t (gyr)')
+
     pl.subplot(2,3,6)
+    pl.plot(ts, [the_m.tau_rc for the_m in mms])
     pl.xlabel('t (gyr)')        
     pl.ylabel('tau_rc')
     
     pl.draw()
-    
 
+def evolution_plot(ts_gyr=linspace(0, 0.01, 10), mass=2e30, 
+                   gg_cgs=8337, kappa_cgs=0.2, tau0=1000, **kw):
+    """Plot the luminosity, entropy, etc of a planet as a function of
+    time."""
+
+    sigs = [12.75,13.75,14.75]
+
+    for sig in sigs:
+        sig_time = evolve(ts_gyr, mass, sig0=sig, gg_cgs=gg_cgs, 
+                          kappa_cgs=kappa_cgs, tau0=tau0, **kw)
+        mms = [PlanetGrav(sig0=the_sig, gg_cgs=gg_cgs, tau0=tau0, **kw)
+               for the_sig in sig_time]                
+        plot_model_evolution(mass, mms)
+    
 def find_pressure(sig, tt_cgs):
     """Find pressure given entropy per baryon and temperature in cgs.
     Assume that you're talking about a monatomic ideal gas and that
@@ -907,22 +925,26 @@ def find_pressure(sig, tt_cgs):
     return kb_cgs*tt_cgs*nq_cgs*exp(2.5-sig)
                                             
 def plot_grav(tints=logspace(1,3,30)):
-    
+    """Plot surface gravity as a function of Tint"""
+
     result = []
     for tint in tints:
-        mm = Planet.FromFluxTemp(t1_cgs=69, k1=100, t2_cgs=105, k2=0.06, t0_cgs=191, tint_cgs=tint, p0_cgs=1.1*1e6, nn=2, alpha=0.85, gamma=1.4, dd=1.5, kappa_cgs=0.2, gravity=True)
-        mm = Planet.FromFluxTau(tint_cgs=tint, tau0=1000, sig0=9, kappa_cgs=1.0, gravity=True)
-        result.append(mm.gg_cgs)
+        try: 
+            mm = PlanetGrav(t1_cgs=69, k1=100, t2_cgs=105, k2=0.06, t0_cgs=191, tint_cgs=tint, p0_cgs=1.1*1e6, nn=2, alpha=0.85, gamma=1.4, dd=1.5, kappa_cgs=0.2)
+            #mm = PlanetGrav(tint_cgs=tint, tau0=1000, sig0=9, kappa_cgs=1.0)
+            result.append(mm.gg_cgs)
+        except: 
+            result.append(nan)
 
     pl.clf()
     pl.loglog(tints, result)
     pl.draw()
 
 def plot_t0(tints=logspace(1,4,30)):
-    
+    """Plot T0 as a function of Tint"""
     result = []
     for tint in tints:
-        mm = Planet.FromFluxTau(tint_cgs=tint, tau0=1000, sig0=9, kappa_cgs=1.0, gravity=True)
+        mm = Planet(tint_cgs=tint, tau0=1000, sig0=9)
         result.append(mm.t0_cgs)
 
     pl.clf()
@@ -930,7 +952,7 @@ def plot_t0(tints=logspace(1,4,30)):
     pl.draw()
         
 def plot_model(tau, mm, pressure=False):
-
+    """Plot an atmosphere model.  Could use a re-work."""
     def flux_marks():
         # mark rad/conv boundary
         pl.semilogy([-100, 100], [rc_bnd, rc_bnd], 'k')    
@@ -996,6 +1018,7 @@ def plot_model(tau, mm, pressure=False):
     pl.draw()
 
 def fig1():
+    "RC Fig 1"
     # Their fig 1.  I have no doubt that they plotted the function
     # correctly, but try to get it from the model directly.
     #
@@ -1043,6 +1066,7 @@ def fig1():
     pl.draw()
 
 def fig2():
+    "RC Fig 2"
     # Says that they use "a range of values of t0" but that for large
     # values it's independent of everything but 4beta/n.  So I guess
     # they picked a large value to plot?
@@ -1070,6 +1094,7 @@ def fig2():
     pl.draw()
 
 def fig3():
+    "RC Fig 3"
     # This looks grossly like their plot, but not quantitatively the
     # same.  There are some parameters that they didn't specify,
     # though.
@@ -1121,6 +1146,7 @@ def fig3():
     pl.draw()
     
 def fig4():
+    "RC Fig 4"
     # shouldn't matter?
     tint=0
     dd = 2.0
@@ -1163,7 +1189,7 @@ def fig4():
     pl.draw()
 
 def fig5(fbon):
-    """fbon = 0.46 for upper panel, 0.57 for lower panel"""
+    """RC Fig 5, fbon = 0.46 for upper panel, 0.57 for lower panel"""
 
     # value shouldn't matter?
     t1 = 1000
@@ -1201,7 +1227,8 @@ def fig5(fbon):
     pl.draw()
     
 def fig6():
-
+    "RC Fig 6"
+    
     # Shouldn't matter?
     kappa = 0.2
     ti = 100
@@ -1241,6 +1268,7 @@ def fig6():
     pl.draw()
 
 def fig7():
+    "RC Fig 7"
     # axes
     kods = logspace(-1.2, 1, 50)
     fratios = logspace(-1, 5, 50)
@@ -1298,6 +1326,7 @@ def fig7():
     pl.draw()
     
 def fig8_9():
+    "RC Fig 8 and 9"
     t1 = (160*1e3/sigma_cgs)**0.25
 
     # unspecified
@@ -1354,6 +1383,7 @@ def fig8_9():
     pl.figure(1)
 
 def fig10_11():
+    "RC Fig 10 and 11"
     # not specified
     kappa = 1.0
     dd = 1.5
@@ -1413,6 +1443,7 @@ def fig10_11():
 
 
 def fig12_13():
+    "RC Fig 12 and 13"
 
     def to_temp(xx):
         return (xx*1e3/sigma_cgs)**0.25
@@ -1534,6 +1565,8 @@ def factorial(nn):
     return result
 
 def gamma_approx_plot():
+    """Plot of approximations to the incomplete gamma function used in
+    RC paper for large x and small x."""
     pl.clf()
     xs = logspace(-1,1,100)
     aas = (1,2,3,4,5)
@@ -1549,53 +1582,19 @@ def gamma_approx_plot():
     pl.ylim(1e-3,None)
     pl.draw()
 
-#   gg_cgs kappa_cgs dgg dtint
-def plot1():
-#  arbitrary tau0 
-#  inputs tint_cgs sig0 nn alpha gamma dd 
-#  outputs t0_cgs tau_rc 
-
-# tau_rc: 
-# t0: 
-# 
-# tau_rc: not a function of sig0, tint
-# t0: not a function of sig0
-# 
-# tau_rc: ~ 
-#   nn: step function, 
-#   alpha: step function 
-#   gamma: step function
-#   dd: gently falling
-#   sig0: no dependence
-#   tint: no dependence    
-#  
-# t0:
-#    ~linear with tint
-#    nn: falling
-#    alpha: rises
-#    gamma: rises, first as ~x^2, then linearly
-#    dd: gently rises
-#    sig0: no dependence
-
-    xs = linspace(0.99,1.01,100)
-    ms = [Planet(tint_cgs=100, sig0=10, tau0=10000, nn=xx) for xx in xs]
-    rc = array([mm.tau_rc for mm in ms])
-    t0 = array([mm.t0_cgs for mm in ms])
-
-    pl.plot(xs, t0)
-    pl.draw()
-
 def plot_isolated_planet(tau_rc=True, filename=None):
+    """tau_rc vs. 4 beta / n for an isolated planet"""
     # no radiation
     fbons = linspace(0.1, 1.0, 100)
 
-    # shouldn't matter
-    dd = 1.5 
-    nn = 1.0
-    gamma = 1.67
-    
+    # Just gives a rescaling of taus.
+    dd = 1.0
+
+    # Don't matter
+    nn = 2.0
+    gamma = 1.33    
     kw = dict(dd=dd, nn=nn, gamma=gamma, 
-              tau0=1000, tint_cgs=100, sig0=10)
+              tau0=2000, tint_cgs=100, sig0=10)
 
     def Gamma(a,x):
         return scipy.special.gamma(a)*scipy.special.gammaincc(a,x)
@@ -1623,7 +1622,7 @@ def plot_isolated_planet(tau_rc=True, filename=None):
         result.append(rr)
 
     if tau_rc: 
-        pl.clf()
+        #pl.clf()
         pl.semilogy(fbons, rmod)
         # pl.plot(fbons, result)
         pl.plot(fbons, rlow)
@@ -1640,18 +1639,23 @@ def plot_isolated_planet(tau_rc=True, filename=None):
 
 
 def plot_single_channel(filename=None):
-    fbons = linspace(0.1, 1.0, 100)
+    """tau_rc vs. 4 beta / n for planet irradiated by a single
+    channel"""
+    fbons = linspace(0.1, 0.99, 100)
 
-    # shouldn't matter
-    dd = 1.5
-    nn = 1.0
+    # doesn't matter
+    nn = 2.0
     gamma = 1.67
+    tau0=2000
+    sig0=10
+    # Just a rescaling of tau as long as you scale k's also.
+    dd = 2.0
 
-    tints = (70, 100, 130)
+    tint=100
+    t1s = (70, 100, 130)
 
     kw = dict(dd=dd, nn=nn, gamma=gamma, 
-              # these also shouldn't matter
-              tau0=1100, tint_cgs=100, sig0=10)
+              tau0=tau0, tint_cgs=tint, sig0=sig0)
 
     def Gamma(a,x):
         return scipy.special.gamma(a)*scipy.special.gammaincc(a,x)
@@ -1665,18 +1669,18 @@ def plot_single_channel(filename=None):
         ref.append(mm.tau_rc)
         
         row = []
-        for tint in tints:            
-            mm = Planet(alpha=alpha, k1=0.1, t1_cgs=tint, **kw)
+        for t1 in t1s:            
+            mm = Planet(alpha=alpha, k1=10, t1_cgs=t1, **kw)
             row.append(mm.tau_rc)
 
         r1.append(row)
         
     r1 = array(r1)
 
-    pl.semilogy(fbons, ref)
-    pl.semilogy(fbons, r1[:,0])
-    pl.semilogy(fbons, r1[:,1])
-    pl.semilogy(fbons, r1[:,2])
+    pl.semilogy(fbons, dd*array(ref))
+    pl.semilogy(fbons, dd*r1[:,0])
+    pl.semilogy(fbons, dd*r1[:,1])
+    pl.semilogy(fbons, dd*r1[:,2])
 
     pl.xlabel(r'$4\beta/n$')
     pl.ylabel(r'$\tau_{RC}$')
@@ -1684,7 +1688,8 @@ def plot_single_channel(filename=None):
     if filename: [pl.savefig(filename +'.'+ext) for ext in exts]
 
 def plot_multiple_solutions():
-
+    """Flux mismatch as a function of optical depth showing multiple
+    solutions for rad/conv boundray"""
     def t0_from_taurc(xx):
         return mm.temp_rad(xx)*(mm.tau0/xx)**(mm.beta/mm.nn)
 
@@ -1698,7 +1703,7 @@ def plot_multiple_solutions():
     nn = 1.0
     gamma = 1.67
 
-    fbon = 0.5
+    fbon = 0.58
     alpha = fbon*nn*gamma/(4.0*(gamma-1))
     kw = dict(dd=dd, nn=nn, gamma=gamma, 
               tau0=2000, tint_cgs=100, sig0=10)
@@ -1710,3 +1715,416 @@ def plot_multiple_solutions():
     pl.clf();
     pl.loglog(taus, val, 'b')
     pl.loglog(taus, -val, 'r')
+    pl.xlabel(r'$\tau_{RC}$')
+    pl.ylabel('Flux discontinuity')
+              
+
+def plot_single_channel_const_en(filename=None):
+    """tau_rc vs. 4 beta / n for model where t_int**4 + t_ext**4 is
+    held constant rather than t_int"""
+    fbons = linspace(0.1, 0.99, 100)
+
+    # doesn't matter
+    nn = 1.0
+    gamma = 1.67
+    tau0=2000
+    sig0=10
+    # Just a rescaling of tau as long as you scale k's also.
+    dd = 1.5
+
+    tot = 100
+    fs = linspace(0,1,11)
+    fs = array([0, 0.01, 0.1, 0.5, 0.9, 0.99, 1.0])
+    t1s = tot*fs**0.25
+    print t1s
+    kw = dict(dd=dd, nn=nn, gamma=gamma, 
+              tau0=tau0, sig0=sig0)
+
+    def Gamma(a,x):
+        return scipy.special.gamma(a)*scipy.special.gammaincc(a,x)
+
+    ref, r1 = [], []
+
+    for fbon in fbons:
+        alpha = fbon*nn*gamma/(4.0*(gamma-1))
+        
+        row = []
+        for t1 in t1s:            
+            tint = (tot**4-t1**4)**0.25
+            mm = Planet(alpha=alpha, k1=10, t1_cgs=t1, tint_cgs=tint, **kw)
+            row.append(mm.tau_rc)
+
+        r1.append(row)
+        
+    r1 = array(r1)
+    for ii in range(r1.shape[1]):
+        pl.semilogy(fbons, r1[:,ii])
+
+    pl.xlabel(r'$4\beta/n$')
+    pl.ylabel(r'$\tau_{RC}$')
+        
+    if filename: [pl.savefig(filename +'.'+ext) for ext in exts]
+
+def plot_1chan_2d(title=None, filename=None):
+    """Contour plot of tau_rc as a function of two variables of your
+    choice, given one radiation channel"""
+    pl.clf()
+
+    # values for axis
+    fbons = linspace(0.1, 0.99, 40)
+    fs = logspace(-1, 2, 40)
+    ks = logspace(-1, 1, 40)
+
+    # values for scalar
+    fbon = 0.6
+    ff = 3.0
+    kk = 0.1
+
+    pl.xlabel(r'F ext / F int')
+    pl.ylabel('k')
+
+    # set up axes
+    xs = fs
+    ys = ks
+    X,Y = structure.make_grid(xs, ys)
+
+    # constants, most/all of which don't matter
+    nn = 1.0
+    gamma = 1.67
+    tau0=2000
+    sig0=10
+    dd = 1.5
+    tint=100
+
+    kw = dict(dd=dd, nn=nn, gamma=gamma, tau0=tau0, sig0=sig0, tint_cgs=tint)
+
+    res = []
+    for xx in xs:
+        row = []
+        for yy in ys:            
+            ff = xx
+            kk = yy
+
+            t1 = ff**0.25 * tint
+            alpha = fbon*nn*gamma/(4.0*(gamma-1))
+            mm = Planet(alpha=alpha, k1=kk, t1_cgs=t1, **kw)
+            row.append(mm.tau_rc)
+
+        res.append(row)        
+    res = array(res)
+
+    if (xs[2]-2*xs[1]+xs[0])/(xs[2]-xs[0]) > 1e-3:
+        pl.xscale('log')
+    if (ys[2]-2*ys[1]+ys[0])/(ys[2]-ys[0]) > 1e-3:
+        pl.yscale('log')
+        
+    pl.pcolormesh(X,Y,log10(res))
+    pl.colorbar()
+    pl.contour(X,Y,log10(res), colors='k')
+    if title: pl.title(title)
+    if filename: [pl.savefig(filename +'.'+ext) for ext in exts]
+    pl.draw()
+
+def plot_2chan_2d(fbon, title=None, filename=None):
+    """Contour plot of tau_rc as a function of two variables of your
+    choice, given two radiation channels"""    
+    pl.clf()
+
+    # values for axis
+    ftot = logspace(-1, 2, 40)
+    fhigh = linspace(0, 1, 40)
+
+    # values for scalars
+    #fbon = 0.6
+
+    k1 = 10
+    k2 = 0.1
+    
+    pl.xlabel('F ext / F int')
+    pl.ylabel(r'frac high')
+
+    # set up axes
+    xs = ftot
+    ys = fhigh
+    X,Y = structure.make_grid(xs, ys)
+
+    # constants, most/all of which don't matter
+    nn = 1.0
+    gamma = 1.67
+    tau0=2000
+    sig0=10
+    dd = 1.5
+    tint=100
+
+    kw = dict(dd=dd, nn=nn, gamma=gamma, tau0=tau0, sig0=sig0, tint_cgs=tint)
+
+    res = []
+    for xx in xs:
+        row = []
+        for yy in ys:            
+            ff = xx
+            hh = yy
+
+            t1 = ff**0.25 * hh**0.25 * tint
+            t2 = ff**0.25 * (1.0-hh)**0.25 * tint
+            
+            alpha = fbon*nn*gamma/(4.0*(gamma-1))
+            mm = Planet(alpha=alpha, 
+                        k1=k1, t1_cgs=t1, k2=k2, t2_cgs=t2, 
+                        **kw)
+            row.append(mm.tau_rc)
+
+        res.append(row)        
+    res = array(res)
+
+    if (xs[2]-2*xs[1]+xs[0])/(xs[2]-xs[0]) > 1e-3:
+        pl.xscale('log')
+    if (ys[2]-2*ys[1]+ys[0])/(ys[2]-ys[0]) > 1e-3:
+        pl.yscale('log')
+        
+    pl.pcolormesh(X,Y,log10(res))
+    pl.colorbar()
+    pl.contour(X,Y,log10(res), colors='k')
+    if title: pl.title(title)
+    if filename: [pl.savefig(filename +'.'+ext) for ext in exts]
+    pl.draw()
+
+def plot_isolated_planet_grav(nn = 1.0, fbon = 0.5, title=None, filename=None):
+    """Plot surf. grav of planet with no radiation incident."""
+    # no radiation
+    pl.clf()
+
+    # tint is _not_ fixed
+    # sig0 changes with time
+    # fbon is fixed
+    # nn is fixed
+    # axes 
+    tints = logspace(1,3,40)
+    sig0s = linspace(6,9,40)
+    fbons = linspace(0.1, 1.0, 30)
+    nns = linspace(1,2,20)
+
+    # scalars 
+    #tint = 100
+    #sig0 = 8
+
+    # set up axes
+    pl.xlabel('sigma')
+    pl.ylabel('Tint')
+    xs=sig0s
+    ys=tints
+
+    # Fix opacity to 1 at 1 bar, scale from that.
+    kappa = (lambda x: (x/1e6)**(nn-1.0), lambda x: 1.0)
+
+    # Don't matter much?
+    dd = 1.0
+    gamma = 1.67
+    tau0 = 2000
+
+    result = []
+    for xx in xs:
+        row = []
+        for yy in ys:            
+            sig0=xx
+            tint=yy
+
+            alpha = fbon*nn*gamma/(4.0*(gamma-1))        
+            mm = PlanetGrav(alpha=alpha, dd=dd, nn=nn, gamma=gamma, tau0=tau0, 
+                            tint_cgs=tint, sig0=sig0, kappa_cgs=kappa)
+            row.append(mm.p0_cgs)
+        result.append(row)
+
+    result = array(result)/980.0
+
+    # Do plotting
+    if (xs[2]-2*xs[1]+xs[0])/(xs[2]-xs[0]) > 1e-3:
+        pl.xscale('log')
+    if (ys[2]-2*ys[1]+ys[0])/(ys[2]-ys[0]) > 1e-3:
+        pl.yscale('log')
+        
+    X,Y = structure.make_grid(xs, ys)
+    pl.pcolormesh(X,Y,log10(result))
+    pl.colorbar()
+    pl.contour(X,Y,log10(result), arange(-10,10, 0.5), colors='k')
+
+    if title: pl.title(title)
+    if filename: [pl.savefig(filename +'.'+ext) for ext in exts]
+    pl.draw()
+
+def plot_grav_1chan(kk=10, nn = 1.0, fbon = 0.5, sig0=8, title=None, filename=None):
+    """Contour plot of surface gravity as a function of two variables
+    of your choice, given one radiation channel"""    
+    # no radiation
+    pl.clf()
+
+    tints = logspace(1,3,30)
+    t1s = logspace(1,3,30)
+    
+    # scalars 
+    #tint = 100
+    #sig0 = 8
+
+    # set up axes
+    pl.xlabel('Text')
+    pl.ylabel('Tint')
+    xs=t1s
+    ys=tints
+
+    # Fix opacity to 1 at 1 bar, scale from that.
+    kappa = (lambda x: (x/1e6)**(nn-1.0), lambda x: 1.0)
+
+    # Don't matter much?
+    dd = 1.0
+    gamma = 1.67
+    tau0 = 2000
+
+    result = []
+    for xx in xs:
+        row = []
+        for yy in ys:            
+            t1=xx
+            tint=yy
+
+            alpha = fbon*nn*gamma/(4.0*(gamma-1))        
+            mm = PlanetGrav(alpha=alpha, dd=dd, nn=nn, gamma=gamma, tau0=tau0, 
+                            t1_cgs=t1, k1=kk, 
+                            tint_cgs=tint, sig0=sig0, kappa_cgs=kappa)
+            row.append(mm.p0_cgs)
+        result.append(row)
+
+    result = array(result)/980.0
+
+    # Do plotting
+    if (xs[2]-2*xs[1]+xs[0])/(xs[2]-xs[0]) > 1e-3:
+        pl.xscale('log')
+    if (ys[2]-2*ys[1]+ys[0])/(ys[2]-ys[0]) > 1e-3:
+        pl.yscale('log')
+        
+    X,Y = structure.make_grid(xs, ys)
+    pl.pcolormesh(X,Y,log10(result))
+    pl.colorbar()
+    pl.contour(X,Y,log10(result), arange(-10,10, 0.5), colors='k')
+
+    if title: pl.title(title)
+    if filename: [pl.savefig(filename +'.'+ext) for ext in exts]
+    pl.draw()
+
+def plot_grav_2chan(nn = 1.0, fbon = 0.5, sig0=8, title=None, filename=None):
+    """Contour plot of surface gravity as a function of two variables
+    of your choice, given two radiation channels"""    
+    pl.clf()
+
+    tints = logspace(log10(50),log10(200),40)
+    fhighs = linspace(0, 1, 40)
+    
+    # scalars 
+    text = 100
+    k1 = 10
+    k2 = 0.1
+
+    # set up axes
+    #pl.xlabel('Text')
+    #pl.ylabel('Tint')
+    xs=fhighs
+    ys=tints
+
+    # Fix opacity to 1 at 1 bar, scale from that.
+    kappa = (lambda x: (x/1e6)**(nn-1.0), lambda x: 1.0)
+
+    # Don't matter much?
+    dd = 1.0
+    gamma = 1.67
+    tau0 = 2000
+
+    result = []
+    for xx in xs:
+        row = []
+        for yy in ys:            
+            fhigh=xx
+            tint=yy
+
+            t1 = text*fhigh**0.25 
+            t2 = (text**4 - t1**4)**0.25
+
+            alpha = fbon*nn*gamma/(4.0*(gamma-1))        
+            mm = PlanetGrav(alpha=alpha, dd=dd, nn=nn, gamma=gamma, tau0=tau0, 
+                            t1_cgs=t1, k1=k1, t2_cgs=t2, k2=k2,
+                            tint_cgs=tint, sig0=sig0, kappa_cgs=kappa)
+            row.append(mm.p0_cgs)
+        result.append(row)
+
+    result = array(result)/980.0
+
+    # Do plotting
+    if (xs[2]-2*xs[1]+xs[0])/(xs[2]-xs[0]) > 1e-3:
+        pl.xscale('log')
+    if (ys[2]-2*ys[1]+ys[0])/(ys[2]-ys[0]) > 1e-3:
+        pl.yscale('log')
+    X,Y = structure.make_grid(xs, ys)
+    pl.pcolormesh(X,Y,log10(result))
+    pl.colorbar()
+    pl.contour(X,Y,log10(result), arange(4,6,0.05), colors='k')
+
+    if title: pl.title(title)
+    if filename: [pl.savefig(filename +'.'+ext) for ext in exts]
+    pl.draw()
+
+def plot_tint_vs_text_fhigh(nn = 1.0, fbon = 0.5, sig0=8, title=None, filename=None):
+    """Contour plot of Tint as a function of Text and frac_high given
+    two radiation channels."""
+    pl.clf()
+
+    texts = logspace(log10(70),log10(130),40)
+    fhighs = linspace(0.0, 1.0, 40)
+    
+    # scalars 
+    k1 = 10
+    k2 = 0.1
+
+    gg = 92713.86
+
+    # set up axes
+    ys=fhighs
+    xs=texts
+
+    # Fix opacity to 1 at 1 bar, scale from that.
+    kappa = (lambda x: (x/1e6)**(nn-1.0), lambda x: 1.0)
+
+    # Don't matter much?
+    dd = 1.0
+    gamma = 1.67
+    tau0 = 2000
+
+    result = []
+    for xx in xs:
+        row = []
+        for yy in ys:            
+            fhigh=yy
+            text=xx
+
+            t1 = text*fhigh**0.25 
+            t2 = (text**4 - t1**4)**0.25
+
+            alpha = fbon*nn*gamma/(4.0*(gamma-1))        
+            mm = PlanetGrav(alpha=alpha, dd=dd, nn=nn, gamma=gamma, tau0=tau0, 
+                            t1_cgs=t1, k1=k1, t2_cgs=t2, k2=k2,
+                            gg_cgs=gg, sig0=sig0, kappa_cgs=kappa)
+            row.append(mm.tint_cgs)
+        result.append(row)
+
+    result = array(result)
+
+    # Do plotting
+    if (xs[2]-2*xs[1]+xs[0])/(xs[2]-xs[0]) > 1e-3:
+        pl.xscale('log')
+    if (ys[2]-2*ys[1]+ys[0])/(ys[2]-ys[0]) > 1e-3:
+        pl.yscale('log')
+    X,Y = structure.make_grid(xs, ys)
+    pl.pcolormesh(X,Y,log10(result))
+    pl.colorbar()
+    pl.contour(X,Y,log10(result), colors='k')
+
+    if title: pl.title(title)
+    if filename: [pl.savefig(filename +'.'+ext) for ext in exts]
+    pl.draw()
