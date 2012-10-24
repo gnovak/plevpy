@@ -97,8 +97,52 @@ def test(long=False):
     "quick test to exercise all of the code paths"
 
     def model_test(the_m):
-        the_m.frad_down_conv(1.1)
+        trc = the_m.tau_rc
 
+        taus = [0.5*trc, trc, 2*trc,    # scalars
+                [0.25*trc, 0.5*trc], [2*trc, 3*trc],   # don't cross rc
+                [0.25*trc, 0.5*trc, 2*trc, 3*trc],    # cross rc
+                [0.25*trc, 0.5*trc, trc, 2*trc, 3*trc]]  # cross rc and hit bndry
+
+        the_m.lum_int(2e30)
+        the_m.lum(2e30)
+
+        for tau in taus:            
+            the_m.temp(tau)
+            the_m.fstar_net(tau)
+            the_m.frad_net_rad(tau)
+            the_m.frad_down_rad(tau)
+            the_m.frad_up_rad(tau)
+            the_m.temp_rad(tau, relaxed=True)
+            the_m.temp_rad(tau, relaxed=False)
+            the_m.fcheck_rad(tau)
+            the_m.fcheck_conv(tau)
+            the_m.pressure(tau)
+            the_m.temp_conv(tau)
+            the_m.fconv_up_conv(tau, hypothetical=False)
+            the_m.fconv_up_conv(tau, hypothetical=True)
+            the_m.frad_net_conv(tau)
+            the_m.frad_down_conv(tau)    
+
+            if isinstance(the_m, PlanetGrav):
+                # Don't think I actually want to check this one.
+                # the_m._simple_pressure_rad(s, taus, gg_cgs, temp_rad=True)
+                the_m.pressure(tau)
+                the_m.pressure_rad(tau, use_actual=False)
+                the_m.pressure_rad(tau, use_actual=True)
+                the_m.pressure_conv(tau)
+            
+        # Ensure that args actually override when they're supposed to
+        # answer = the_m.frad_up_conv(tau)
+        # t0 = the_m.t0
+        # tau0 = the_m.tau0
+        # the_m.t0=None
+        # the_m.tau0=None
+        # answer2 = the_m.frad_up_conv(tau, t0=t0, tau0=tau0)
+        # assert answer == answer2
+        # the_m.t0 = t0
+        # the_m.tau0 = tau0
+            
     kw = dict(nn=1, alpha=1, t1_cgs=75, k1=1, t2_cgs=0, k2=0, 
                   tint_cgs=75, gamma=1.67, dd=1.5)
 
@@ -330,6 +374,8 @@ class Planet:
         def Gamma(a,x):
             return scipy.special.gamma(a)*scipy.special.gammaincc(a,x)
 
+        tau = asarray(tau)
+
         # Allow temp to be an argument in order to carry out solution
         # for tau_rc.  If it's not specified, use the value in the
         # object.
@@ -391,12 +437,13 @@ class Planet:
 
     def temp_conv(s, tau):
         """Temp profile in convective region, RC eq 11"""
-
+        tau = asarray(tau)
         ex = s.beta/s.nn
         return s.t0_cgs*(tau/s.tau0)**ex
 
     def pressure(s, tau):
         """pressure profile, RC eq 6"""
+        tau = asarray(tau)
         return s.p0_cgs*(tau/s.tau0)**(1/s.nn)
 
     def fcheck_conv(s, tau):
@@ -460,7 +507,7 @@ class Planet:
 
     def frad_up_rad(s, tau):
         """Upward radiative flux in the radiative region, RC eq 19"""
-
+        tau = asarray(tau)
         # take the limit as k->0 by hand
         term1 = (2+(s.dd-s.k1)*tau if s.k1 < s.kmin
                  else 1 + s.dd/s.k1 + (1-s.dd/s.k1)*exp(-s.k1*tau))
@@ -470,7 +517,7 @@ class Planet:
 
     def frad_down_rad(s, tau):
         """Downward radiative flux in the radiative region, RC eq 20"""
-
+        tau = asarray(tau)
         # take the limit as k->0 by hand
         term1 = ( (s.dd + s.k1)*tau if s.k1 < s.kmin
                   else 1 + s.dd/s.k1 - (1+s.dd/s.k1)*exp(-s.k1*tau))
@@ -487,13 +534,18 @@ class Planet:
 
     def fstar_net(s, tau):
         """Net absorbed stellar flux, RC eq 15"""
+        tau = asarray(tau)
         return s.f1_cgs*exp(-s.k1*tau) + s.f2_cgs*exp(-s.k2*tau)
 
-    def temp(s, tau):
+    def temp(s, tau, relaxed=False):
         """Temperature that's appropriate in either the radiative or
         convective region."""
+        if not iterable(tau):
+            if tau > s.tau_rc: return s.temp_conv(tau)
+            else: return s.temp_rad(tau, relaxed=relaxed)
+
         tau = asarray(tau)
-        result = s.temp_rad(tau)
+        result = s.temp_rad(tau, relaxed=relaxed)
         result[tau>s.tau_rc] = s.temp_conv(tau)[tau>s.tau_rc]
         return result
     
@@ -578,7 +630,8 @@ class PlanetGrav(Planet):
         else:
             # In this case we have to find tint that gives the appropriate surf grav.
             s.gg_cgs = float(gg_cgs)
-            s.tint_cgs = s._model_from_grav(dtint, **kw)
+            tint_cgs = s._model_from_grav(dtint, **kw)
+            s.fint_cgs = sigma_cgs*tint_cgs**4 
             # now that we know tint, can solve for tau_rc, etc.
             kw_2 = popKeys(dict(kw), 'tau0', 'dtau_rc', 't0_cgs', 'sig0', 'p0_cgs', 'relaxed')
             Planet.__init_solve__(s, **kw_2)
@@ -618,14 +671,18 @@ class PlanetGrav(Planet):
         # this requires splitting the input array in two b/c of the
         # requirement that the integration start at the rad/conv
         # boundary.
+
+        temp_rad = not use_actual
+
         if not iterable(tau):
-            result = s._simple_pressure_rad([s.tau_rc, tau])
+            result = s._simple_pressure_rad([s.tau_rc, tau], s.gg_cgs, temp_rad)
             return result[1]
 
+        tau = asarray(tau)
         trad = concatenate(([s.tau_rc], tau[tau<=s.tau_rc][::-1]))
         tconv = concatenate(([s.tau_rc], tau[tau>s.tau_rc]))
-        prad = s._simple_pressure_rad(trad, s.gg_cgs)[1:][::-1]
-        pconv = s._simple_pressure_rad(tconv, s.gg_cgs)[1:]
+        prad = s._simple_pressure_rad(trad, s.gg_cgs, temp_rad)[1:][::-1]
+        pconv = s._simple_pressure_rad(tconv, s.gg_cgs, temp_rad)[1:]
         pp = concatenate((prad, pconv))
         return pp[:,0]
 
@@ -647,7 +704,7 @@ class PlanetGrav(Planet):
             if temp_rad:
                 trad = s.temp_rad(tau, relaxed=True)
             else:
-                trad = s.temperature(tau, relaxed=True)
+                trad = s.temp(tau, relaxed=True)
             result = [gg_cgs/s.kappa(pp, trad)]
             return result
 
@@ -663,7 +720,7 @@ class PlanetGrav(Planet):
             if tau >= s.tau_rc:
                 return s.pressure_conv(tau)
             else:
-                return s.pressure_rad([s.tau_rc, tau])[1,0]
+                return s.pressure_rad(tau)
         else:
             # taus must be in increasing order for the moment
             tau = asarray(tau)
@@ -858,9 +915,9 @@ def evolve(ts_gyr, mass, gg_cgs=None, gamma=1.67, sig0=None, **kw):
         return [dsdt]
 
     ts = 1e9*3.15e7*asarray(ts_gyr)
-    return scipy.integrate.odeint(derivs, [sig0], ts)
+    return scipy.integrate.odeint(derivs, [sig0], ts)[:,0]
     
-def plot_model_evolution(mass, mms): 
+def plot_model_evolution(ts, sig_time, mass, mms): 
     """Plot the luminosity, entropy, etc for a single model evolved
     through time."""
 
@@ -897,18 +954,16 @@ def plot_model_evolution(mass, mms):
     pl.draw()
 
 def evolution_plot(ts_gyr=linspace(0, 0.01, 10), mass=2e30, 
-                   gg_cgs=8337, kappa_cgs=0.2, tau0=1000, **kw):
+                   gg_cgs=5974.0, kappa_cgs=0.2, tau0=1000, sig0=13.0, **kw):
     """Plot the luminosity, entropy, etc of a planet as a function of
     time."""
 
-    sigs = [12.75,13.75,14.75]
-
-    for sig in sigs:
-        sig_time = evolve(ts_gyr, mass, sig0=sig, gg_cgs=gg_cgs, 
-                          kappa_cgs=kappa_cgs, tau0=tau0, **kw)
-        mms = [PlanetGrav(sig0=the_sig, gg_cgs=gg_cgs, tau0=tau0, **kw)
-               for the_sig in sig_time]                
-        plot_model_evolution(mass, mms)
+    sig_time = evolve(ts_gyr, mass, sig0=sig, gg_cgs=gg_cgs, 
+                      kappa_cgs=kappa_cgs, tau0=tau0, **kw)
+    mms = [PlanetGrav(sig0=the_sig, gg_cgs=gg_cgs, tau0=tau0, 
+                      kappa_cgs=kappa_cgs, **kw)
+           for the_sig in sig_time]                
+    plot_model_evolution(ts_gyr, sig_time, mass, mms)
     
 def find_pressure(sig, tt_cgs):
     """Find pressure given entropy per baryon and temperature in cgs.
@@ -921,7 +976,6 @@ def find_pressure(sig, tt_cgs):
     kb_cgs = 1.38e-16
     mp_cgs = 1.67e-24
     nq_cgs = (mp_cgs*kb_cgs*tt_cgs/(2*pi*hbar_cgs**2))**1.5
-
     return kb_cgs*tt_cgs*nq_cgs*exp(2.5-sig)
                                             
 def plot_grav(tints=logspace(1,3,30)):
