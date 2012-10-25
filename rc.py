@@ -143,69 +143,133 @@ def test(long=False):
         # the_m.t0 = t0
         # the_m.tau0 = tau0
             
+    def test_basic_model():
+        ##############################
+        # Straight RC model
+        mm = Planet(tau0=1000, sig0=9, **kw)
+        model_test(mm)
+        mm = Planet(tau0=1000, p0_cgs=1e2*1e6, **kw)
+        model_test(mm)
+        mm = Planet(t0_cgs=1000, sig0=9, **kw)
+        model_test(mm)
+        mm = Planet(t0_cgs=1000, p0_cgs=1e2*1e8, **kw)
+        model_test(mm)
+
+    def test_grav_model():
+
+        ##############################
+        # Gravity model w/ constant opacity
+        mm = PlanetGrav(tau0=1000, sig0=9, kappa_cgs=0.2, **kw)
+        model_test(mm)
+        mm = PlanetGrav(tau0=1000, p0_cgs=1e2*1e6, kappa_cgs=0.2, **kw)
+        model_test(mm)
+        mm = PlanetGrav(t0_cgs=1000, sig0=9, kappa_cgs=0.2, **kw)
+        model_test(mm)
+        mm = PlanetGrav(t0_cgs=1000, p0_cgs=1e2*1e8, kappa_cgs=0.2, **kw)
+        model_test(mm)
+
+        ##############################
+        # Gravity model w/ constant functional opacity
+        kap = lambda x,y: 0*x + 0*y + 0.2
+        if long:
+            mm = PlanetGrav(tau0=1000, sig0=9, kappa_cgs=0.2, **kw)
+            model_test(mm)
+            mm = PlanetGrav(tau0=1000, p0_cgs=4.5e6, kappa_cgs=0.2, **kw)
+            model_test(mm)
+            mm = PlanetGrav(t0_cgs=100, sig0=9, kappa_cgs=0.2, **kw)
+            model_test(mm)
+            mm = PlanetGrav(t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=0.2, **kw)
+            model_test(mm)
+
+        ##############################
+        # Gravity model solving for surface grav
+        kw2 = dict(kw)
+        del kw2['tint_cgs']
+
+        mm = PlanetGrav(gg_cgs=58600, tau0=1000, sig0=9, kappa_cgs=0.2, **kw2)
+        model_test(mm)
+        mm = PlanetGrav(gg_cgs=58600, tau0=1000, p0_cgs=4.5e6, kappa_cgs=0.2, **kw2)
+        model_test(mm)
+        mm = PlanetGrav(gg_cgs=58600, t0_cgs=100, sig0=9, kappa_cgs=0.2, **kw2)
+        model_test(mm)
+        mm = PlanetGrav(gg_cgs=58600, t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=0.2, **kw2)
+        model_test(mm)
+
+        ##############################
+        # Gravity model solving for surface with functional opacity 
+        # This takes too long...  
+        if False and long:
+            mm = PlanetGrav(gg_cgs=58600, tau0=1000, sig0=9, kappa_cgs=kap, **kw2)
+            model_test(mm)
+            mm = PlanetGrav(gg_cgs=58600, tau0=1000, p0_cgs=4.5e6, kappa_cgs=kap, **kw2)
+            model_test(mm)
+            mm = PlanetGrav(gg_cgs=58600, t0_cgs=100, sig0=9, kappa_cgs=kap, **kw2)
+            model_test(mm)
+            mm = PlanetGrav(gg_cgs=58600, t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=kap, **kw2)
+            model_test(mm)
+
+    def test_grav_fast_model():
+        kw2 = dict(kw)
+        del kw2['nn']
+
+        ##############################
+        # Fast Gravity model w/ constant opacity
+        kap = (0.2, 0, 0, 1.0, 1.0)
+        mm = PlanetGravFast(tau0=1000, sig0=9, kappa_cgs=kap, **kw2)
+        model_test(mm)
+        mm = PlanetGravFast(tau0=1000, p0_cgs=1e2*1e6, kappa_cgs=kap, **kw2)
+        model_test(mm)
+        mm = PlanetGravFast(t0_cgs=1000, sig0=9, kappa_cgs=kap, **kw2)
+        model_test(mm)
+        mm = PlanetGravFast(t0_cgs=1000, p0_cgs=1e2*1e8, kappa_cgs=kap, **kw2)
+        model_test(mm)
+
+        ##############################
+        # Fast Gravity model w/ constant functional opacity
+        kap = (0.2, 1, 1, 1.0, 1.0)
+        mm = PlanetGravFast(tau0=1000, sig0=9, kappa_cgs=kap, **kw2)
+        model_test(mm)
+        mm = PlanetGravFast(tau0=1000, p0_cgs=4.5e6, kappa_cgs=kap, **kw2)
+        model_test(mm)
+        mm = PlanetGravFast(t0_cgs=100, sig0=9, kappa_cgs=kap, **kw2)
+        model_test(mm)
+        mm = PlanetGravFast(t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=kap, **kw2)
+        model_test(mm)
+
+        del kw2['tint_cgs']
+        ##############################
+        # Fast Gravity model solving for surface grav with constant opacity
+        kap = (0.2, 0, 0, 0.26e6, 100)
+        mm = PlanetGravFast(gg_cgs=58600, tau0=1000, sig0=9, kappa_cgs=kap, **kw2)
+        model_test(mm)
+        # FIXME
+        #mm = PlanetGravFast(gg_cgs=58600, tau0=1000, p0_cgs=4.5e6, kappa_cgs=kap, **kw2)
+        model_test(mm)
+        mm = PlanetGravFast(gg_cgs=58600, t0_cgs=100, sig0=9, kappa_cgs=kap, **kw2)
+        model_test(mm)
+        mm = PlanetGravFast(gg_cgs=58600, t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=kap, **kw2)
+        model_test(mm)
+
+        ##############################
+        # Fast Gravity model solving for surface with functional opacity 
+        kap = (0.2, 1, 1, 0.26e6, 100)
+        mm = PlanetGravFast(gg_cgs=58600, tau0=1000, sig0=9, kappa_cgs=kap, **kw2)
+        model_test(mm)
+        mm = PlanetGravFast(gg_cgs=58600, tau0=1000, p0_cgs=4.5e6, kappa_cgs=kap, **kw2)
+        model_test(mm)
+        # FIXME
+        #mm = PlanetGravFast(gg_cgs=58600, t0_cgs=100, sig0=9, kappa_cgs=kap, **kw2)
+        model_test(mm)
+        # FIXME
+        # mm = PlanetGravFast(gg_cgs=58600, t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=kap, **kw2)
+        model_test(mm)
+
     kw = dict(nn=1, alpha=1, t1_cgs=75, k1=1, t2_cgs=0, k2=0, 
                   tint_cgs=75, gamma=1.67, dd=1.5)
 
-    ##############################
-    # Straight RC model
-    mm = Planet(tau0=1000, sig0=9, **kw)
-    model_test(mm)
-    mm = Planet(tau0=1000, p0_cgs=1e2*1e6, **kw)
-    model_test(mm)
-    mm = Planet(t0_cgs=1000, sig0=9, **kw)
-    model_test(mm)
-    mm = Planet(t0_cgs=1000, p0_cgs=1e2*1e8, **kw)
-    model_test(mm)
-
-    ##############################
-    # Gravity model w/ constant opacity
-    mm = PlanetGrav(tau0=1000, sig0=9, kappa_cgs=0.2, **kw)
-    model_test(mm)
-    mm = PlanetGrav(tau0=1000, p0_cgs=1e2*1e6, kappa_cgs=0.2, **kw)
-    model_test(mm)
-    mm = PlanetGrav(t0_cgs=1000, sig0=9, kappa_cgs=0.2, **kw)
-    model_test(mm)
-    mm = PlanetGrav(t0_cgs=1000, p0_cgs=1e2*1e8, kappa_cgs=0.2, **kw)
-    model_test(mm)
-
-    ##############################
-    # Gravity model w/ constant functional opacity
-    kap = lambda x,y: 0*x + 0*y + 0.2
-    if long:
-        mm = PlanetGrav(tau0=1000, sig0=9, kappa_cgs=0.2, **kw)
-        model_test(mm)
-        mm = PlanetGrav(tau0=1000, p0_cgs=4.5e6, kappa_cgs=0.2, **kw)
-        model_test(mm)
-        mm = PlanetGrav(t0_cgs=100, sig0=9, kappa_cgs=0.2, **kw)
-        model_test(mm)
-        mm = PlanetGrav(t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=0.2, **kw)
-        model_test(mm)
-
-    ##############################
-    # Gravity model solving for surface grav
-    del kw['tint_cgs']
-
-    mm = PlanetGrav(gg_cgs=58600, tau0=1000, sig0=9, kappa_cgs=0.2, **kw)
-    model_test(mm)
-    mm = PlanetGrav(gg_cgs=58600, tau0=1000, p0_cgs=4.5e6, kappa_cgs=0.2, **kw)
-    model_test(mm)
-    mm = PlanetGrav(gg_cgs=58600, t0_cgs=100, sig0=9, kappa_cgs=0.2, **kw)
-    model_test(mm)
-    mm = PlanetGrav(gg_cgs=58600, t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=0.2, **kw)
-    model_test(mm)
-
-    ##############################
-    # Gravity model solving for surface with functional opacity 
-    # This takes too long...  
-    if False and long:
-        mm = PlanetGrav(gg_cgs=58600, tau0=1000, sig0=9, kappa_cgs=kap, **kw)
-        model_test(mm)
-        mm = PlanetGrav(gg_cgs=58600, tau0=1000, p0_cgs=4.5e6, kappa_cgs=kap, **kw)
-        model_test(mm)
-        mm = PlanetGrav(gg_cgs=58600, t0_cgs=100, sig0=9, kappa_cgs=kap, **kw)
-        model_test(mm)
-        mm = PlanetGrav(gg_cgs=58600, t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=kap, **kw)
-        model_test(mm)
+    test_basic_model()
+    #test_grav_model()
+    test_grav_fast_model()
 
 def all_figs():
     "Draw all figures from RC paper."
@@ -262,7 +326,7 @@ class Planet:
         elif tau0 is None and t0_cgs is None: 
             raise ValueError, "Must specify one of tau0 or t0_cgs"
 
-        if tau0:
+        if tau0 is not None:
             s.tau0 = float(tau0)
             s.tau_rc, s.t0_cgs = s._model_from_tau0(dtau_rc)
         else:
@@ -621,7 +685,7 @@ class PlanetGrav(Planet):
         elif gg_cgs is None and tint_cgs is None:
             raise ValueError, "Must specify one of tint_cgs or gg_cgs"
 
-        if tint_cgs:
+        if tint_cgs is not None:
             # In this case all we have to do is compute the surface
             # gravity after initializing normally
             kw_2 = popKeys(dict(kw), 'tau0', 'dtau_rc', 't0_cgs', 'sig0', 'p0_cgs', 'relaxed')
@@ -734,12 +798,12 @@ class PlanetGrav(Planet):
         """When the opacity is a separable power law function of
         pressure and temperature, you can find the surface gravity
         using this expression.  This is here for checking
-        _analytic_surface_gravity() since there's now way to be sure
+        _surface_gravity_from_definite_integrals() since there's now way to be sure
         that the opacity is a pure PL without allowing special syntax
         for that case."""
         return s.p0_cgs*s.kappa(s.p0_cgs, s.t0_cgs)/(s.tau0*s.nn)
 
-    def _analytic_surface_gravity(s):
+    def _surface_gravity_from_definite_integrals(s):
         """When the opacity is a separable function of pressure and
         temperature, you can find the surface gravity analtyically.
         Allow this as a special case."""
@@ -759,10 +823,93 @@ class PlanetGrav(Planet):
 
         # Take the analytic shortcut if it's available
         if hasattr(s, '_kappa_separate_t'):
-            return s._analytic_surface_gravity()
+            return s._surface_gravity_from_definite_integrals()
         gl, gh = 0.0, 1.0
         while ff(gh) > 0 and 2*gh != gh: gh *= 2
         return scipy.optimize.bisect(ff, gl, gh, xtol=dgg)
+
+class PlanetGravFast(Planet):
+    """Planet that knows about gravity and hydrostatic equilibrium.
+    Require the opacity to be a power law function of pressure and
+    temperature so that I can do all of the integrals analytically.
+    Also compute the value of nn from the properties of the opacity
+    function, so nn cannot be specified separtely."""
+
+    def __init__(s, dtau_rc=1e-4, dtint=1e-2, alpha=1.0, gamma=1.67, 
+                 kappa_cgs=None, **kw):
+        """Initialize model, figuring out which init code to run based
+        on whether gg_cgs or tint_cgs is specified."""
+        # This model computes nn -- it is an error to specify it.  
+        if 'nn' in kw: 
+            raise ValueError, "The opacity implicitly specifies nn in this model."
+
+        # Figure out nn for pressure-optical depth relation
+        s.kappa_0, s.kappa_ppow, s.kappatpow, s.kappa_p0, s.kappa_t0 = kappa_cgs
+        beta = alpha*(gamma-1)/(1.0*gamma)
+        nn = 1 + s.kappa_ppow + s.kappatpow*beta
+        verbose=False
+        if verbose: print "nn = ", nn
+
+        kw_2 = removeKeys(dict(kw), 'gg_cgs', 'tau0', 't0_cgs', 'sig0', 'p0_cgs', 'relaxed')
+        Planet.__init_simple__(s, alpha=alpha, gamma=gamma, nn=nn, **kw_2)
+        s.__init_solve__(dtau_rc=dtau_rc, dtint=dtint, alpha=alpha, gamma=gamma, 
+                         kappa_cgs=kappa_cgs, **kw)
+                
+    def __init_solve__(s, gg_cgs=None, tint_cgs=None, dtint=None, **kw): 
+        """Solve for the model.  Figure out how to initialize based on
+        whether gg_cgs or tint_cgs was specified."""
+
+        if gg_cgs and tint_cgs:
+            raise ValueError, "Can't specify both tint_cgs and gg_cgs"
+        elif gg_cgs is None and tint_cgs is None:
+            raise ValueError, "Must specify one of tint_cgs or gg_cgs"
+
+        if tint_cgs is not None:
+            # In this case all we have to do is compute the surface
+            # gravity after initializing normally
+            kw_2 = popKeys(dict(kw), 'tau0', 'dtau_rc', 't0_cgs', 'sig0', 'p0_cgs', 'relaxed')
+            Planet.__init_solve__(s, **kw_2)
+            s.gg_cgs = s._surface_gravity()
+        else:
+            # In this case we have to find tint that gives the appropriate surf grav.
+            s.gg_cgs = float(gg_cgs)
+            tint_cgs = s._model_from_grav(dtint, **kw)
+            s.fint_cgs = sigma_cgs*tint_cgs**4 
+            # now that we know tint, can solve for tau_rc, etc.
+            kw_2 = popKeys(dict(kw), 'tau0', 'dtau_rc', 't0_cgs', 'sig0', 'p0_cgs', 'relaxed')
+            Planet.__init_solve__(s, **kw_2)
+
+    def _model_from_grav(s, dtint, **kw):
+        """Solve for tint_cgs given surface gravity.  This is where
+        the big money is.
+
+        This _does not_ modify the present object, only solves for a
+        value.  Actually filling the resulting values into the
+        instance is done by __init_solve__"""
+        def ff(tint):
+            mm = PlanetGravFast(tint_cgs=tint, **kw)
+            result = mm.gg_cgs - s.gg_cgs
+            return result
+
+        # It's an error to try to specify tint:
+        if 'tint_cgs' in kw: raise ValueError, "This model solves for Tint"
+
+        tl, th = 100, 100
+
+        while ff(tl) >= 0 and 2*tl != tl: tl /= 2.0
+        while ff(th) <= 0 and 2*th != th: th *= 2.0
+        tint = scipy.optimize.bisect(ff, tl, th, xtol=dtint)
+        return tint 
+
+    def kappa(s, pp, tt):
+        return (s.kappa_0 * (pp/s.kappa_p0)**s.kappa_ppow *
+                (tt/s.kappa_t0)**s.kappatpow)
+
+    def _surface_gravity(s):
+        """This holds when the opacity is a separable power law
+        function of pressure and temperature."""
+        return s.p0_cgs*s.kappa(s.p0_cgs, s.t0_cgs)/(s.tau0*s.nn)
+
 
 ###############
 #### Evolution
@@ -882,7 +1029,8 @@ class PlanetFromGravDirect(Planet):
 
 # Example parameters
 # evolve([0, 1e-3], 2e30, gg_cgs=9053, t1_cgs=150, k1=100, t2_cgs=105, k2=0.06, tau0=1000, sig0=13.75, nn=2, alpha=0.85, gamma=1.4, dd=1.5, kappa_cgs=0.2)
-def evolve(ts_gyr, mass, gg_cgs=None, gamma=1.67, sig0=None, **kw):
+def evolve(ts_gyr, mass, gg_cgs=None, gamma=1.67, sig0=None, 
+           model=PlanetGravFast, **kw):
     """Idea here is that solution to lane-emden equation have cores,
     not cusps, so the mean density is an ok approx to the density
     throughout the object.  Then the entropy gives the temperature,
@@ -910,7 +1058,7 @@ def evolve(ts_gyr, mass, gg_cgs=None, gamma=1.67, sig0=None, **kw):
     def derivs(yy,tt):
         sig = yy[0]
         en = efactor*exp(2*sig/3.0 - 5/3.0)
-        mm = PlanetGrav(gg_cgs=gg_cgs, gamma=gamma, sig0=sig0, **kw)
+        mm = model(gg_cgs=gg_cgs, gamma=gamma, sig0=sig0, **kw)
         dsdt = -3*mm.lum_int(mass)/(2*en)
         return [dsdt]
 
@@ -947,24 +1095,50 @@ def plot_model_evolution(ts, sig_time, mass, mms):
     pl.xlabel('t (gyr)')
 
     pl.subplot(2,3,6)
-    pl.plot(ts, [the_m.tau_rc for the_m in mms])
+    pl.semilogy(ts, [the_m.tau_rc for the_m in mms])
     pl.xlabel('t (gyr)')        
     pl.ylabel('tau_rc')
     
     pl.draw()
 
 def evolution_plot(ts_gyr=linspace(0, 0.01, 10), mass=2e30, 
+                   model=PlanetGravFast, 
                    gg_cgs=5974.0, kappa_cgs=0.2, tau0=1000, sig0=13.0, **kw):
     """Plot the luminosity, entropy, etc of a planet as a function of
     time."""
 
-    sig_time = evolve(ts_gyr, mass, sig0=sig, gg_cgs=gg_cgs, 
+    sig_time = evolve(ts_gyr, mass, sig0=sig0, gg_cgs=gg_cgs, 
                       kappa_cgs=kappa_cgs, tau0=tau0, **kw)
-    mms = [PlanetGrav(sig0=the_sig, gg_cgs=gg_cgs, tau0=tau0, 
+    mms = [model(sig0=the_sig, gg_cgs=gg_cgs, tau0=tau0, 
                       kappa_cgs=kappa_cgs, **kw)
            for the_sig in sig_time]                
     plot_model_evolution(ts_gyr, sig_time, mass, mms)
     
+def isolated_evolution(ts_gyr=linspace(0, 1.0, 30), fbons=linspace(0.2, 0.7, 6), 
+                       # things I actually use
+                       model=PlanetGravFast,                        
+                       nn=1.0,  
+                       alpha=0.625, kappa_5mbar=1.0, 
+                       # reasonable defaults
+                       mass=2e30, gg_cgs=5974.0, sig0=13.0, tau0=1000, gamma=1.67, 
+                       **kw):
+
+    # other model params
+    # tint_cgs t1_cgs t2_cgs k1 k2 dd 
+    # alpha is set implicitly by fbon
+    kappa = (lambda p: kappa_5mbar*(p/5e3)**(nn-1.0) , lambda T: 1.0)
+    pl.clf()
+
+    for fbon in fbons:
+        #alpha = fbon*nn*gamma/(4.0*(gamma-1))
+        nn = 4.0*alpha*(gamma-1)/(fbon*gamma)
+        print nn
+        kappa = (kappa_5mbar, nn-1.0, 0, 5e3, 100)
+        evolution_plot(ts_gyr=ts_gyr, mass=mass, model=model, 
+                       gg_cgs=gg_cgs, kappa_cgs=kappa, tau0=tau0, 
+                       sig0=sig0, alpha=alpha, 
+                       gamma=gamma, **kw)
+
 def find_pressure(sig, tt_cgs):
     """Find pressure given entropy per baryon and temperature in cgs.
     Assume that you're talking about a monatomic ideal gas and that
