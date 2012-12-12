@@ -59,12 +59,15 @@ import pylab
 ##############################
 # EOS
 # Choices are 'polytrop', 'scvh', 'gsn'
-eos = 'polytrope'
-eos_parameters = dict(gamma=(5,3))
+# eos = 'polytrope'
+# eos_parameters = dict(gamma=(5,3))
+
+eos = 'gsn'
+eos_parameters = dict()
     
 ##############################
 # Physical parameters
-
+BAR = 1e6 # cgs
 hbar = 1.05e-27 # cgs
 mp = 1.67e-24  # cgs
 me = 9.1e-28 # cgs
@@ -547,11 +550,16 @@ def entropy_gsn_nn_kt(_me=me, ff_e=1.0, nexp_e=4.0, Gamma_e=4.0,
     return entropy_gsn_explicit
      
 
-def eos_gsn_tables_internal(rhos=np.logspace(-6,20,50), 
-                                    sigmas=np.logspace(-6,20,50), 
-                                    _mp=mp, _me=me, _cc=cc, _hbar=hbar,
-                                    method='bisect', 
-                                    **kw):
+# def eos_gsn_tables_internal(rhos=np.logspace(-5,20,50), 
+#                                     sigmas=np.logspace(-6,20,50), 
+#                                     _mp=mp, _me=me, _cc=cc, _hbar=hbar,
+#                                     method='bisect', 
+#                                     **kw):
+def eos_gsn_tables_internal(rhos=np.logspace(-12,4,50), 
+                            sigmas=np.logspace(0,2,50), 
+                            _mp=mp, _me=me, _cc=cc, _hbar=hbar,
+                            method='bisect', 
+                            **kw):
     """Equation of state taking into account ideal gas pressure,
     degeneracy pressure, relativistic degeneracy pressure, and
     relativistic gas pressure.  You can move around the boundaries
@@ -706,10 +714,16 @@ method = scheme for finding desired value of density.  Can be 'bisect' or 'newto
 # depend on density anymore) and setting min and max pressures by
 # pressure when electrons go relativistic (10^23) and at cosmic
 # density at the min temperature (10^-21) gives the limits: 
-# ps=np.logspace(-21,23,8), 
-# ts=np.logspace(0,9,6),                                
-def eos_gsn_pt_tables_internal(ps=np.logspace(-5,15,30), 
-                               ts=np.logspace(0,6,30), 
+#   ps=np.logspace(-21,23,8), 
+#   ts=np.logspace(0,9,6),       
+# My rather wide limits
+#   ps=np.logspace(-5,15,30), 
+#   ts=np.logspace(0,6,30),                                
+# SCvH Limits:
+#   ps=np.logspace(4,19,10), 
+#   ts=np.logspace(2,7,10),                                                         
+def eos_gsn_pt_tables_internal(ps=np.logspace(4,19,60), 
+                               ts=np.logspace(2,7,60), 
                                _mp=mp, _me=me, _cc=cc, _hbar=hbar,
                                method='bisect', 
                                **kw):
@@ -870,6 +884,7 @@ def eos_gsn_pt_tables_internal(ps=np.logspace(-5,15,30),
     return ps, ts, nns, sigmas
 
 eos_gsn_pt_tables = memoize(eos_gsn_pt_tables_internal)
+#eos_gsn_pt_tables = eos_gsn_pt_tables_internal
 
 ##############################
 ### Find and plot regions where relevant physics for protons and
@@ -1613,6 +1628,8 @@ def hse(pc=None, sigma=5.0, filename=None,
     # for interpolation table
     rho_min = 1e-30 # cgs
     rho_max = 1e30 # cgs
+    rho_min = 1e-5
+    rho_max = 1e5
     n_rho = 10000
 
     # number of values of the pressure to include in a single model calc.
@@ -1628,6 +1645,8 @@ def hse(pc=None, sigma=5.0, filename=None,
     ##############################
     # set up function to interpolate to get rho
     rho = np.logspace(np.log10(rho_min),np.log10(rho_max),n_rho)
+    # FIXME -- temporary hack
+    sigma = 0*rho + sigma
     log_rho = scipy.interpolate.interp1d(np.log(pressure(rho, sigma)),
                                          np.log(rho))
 
@@ -1680,28 +1699,34 @@ def hse(pc=None, sigma=5.0, filename=None,
     pylab.loglog(m_models[:,-1]/Mjup, r_models[:,-1]/Rjup,'-o')
     pylab.xlabel(r'$M \, (M_J)$')
     pylab.ylabel(r'$R \, (R_J)$')
-
+    
     if filename: 
         [pylab.savefig(filename + '-m-r-relation.' + ext) for ext in exts]
 
     # plot the models that we have
     pylab.figure(2)
-    pylab.clf()
+    # pylab.clf()
 
     pylab.subplot(221)
     pylab.xlabel(r'$R \, (R_J)$')
     pylab.ylabel(r'$M \, (M_J)$')
     pylab.loglog(r_models.transpose()/Rjup, m_models.transpose()/Mjup)
+    pylab.xlim(1e-2,1)
+    pylab.ylim(1e-4,1e2)
 
     pylab.subplot(222)
     pylab.xlabel(r'$R \, (R_J)$')
     pylab.ylabel(r'$\rho \, (cgs)$')
     pylab.loglog(r_models.transpose()/Rjup, rho_models.transpose())
+    pylab.xlim(1e-2,1e1)
+    pylab.ylim(1e-2,1e4)
 
     pylab.subplot(223)
     pylab.xlabel(r'$R \, (R_J)$')
     pylab.ylabel(r'$P \, (bar)$')
-    pylab.loglog(r_models.transpose()/Rjup, p_models.transpose()/1e5)
+    pylab.loglog(r_models.transpose()/Rjup, p_models.transpose()/BAR)
+    pylab.xlim(1e-2,1)
+    pylab.ylim(1e5,1e12)
 
     if filename: 
         [pylab.savefig(filename + '-models.' + ext) for ext in exts]
