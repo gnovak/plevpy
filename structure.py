@@ -286,6 +286,52 @@ def pressure_scvh(other_arg, filename='table'):
     #sigma_table = np.loadtxt(filename)
     return pressure
 
+def pressure_temperature_mesa(filename='../eos/MESA_EOS/rho_sig_grid'):
+    logrho = np.loadtxt(filename + '_logrho.txt')
+    sigma = np.loadtxt(filename + '_sigma.txt')
+    logpressure = np.loadtxt(filename + '_logP.txt')
+    logtemp = np.loadtxt(filename + '_logT.txt')
+    mu = np.loadtxt(filename + '_mu.txt')
+
+    rho = 10**logrho
+    pressure = 10**logpressure
+    temp = 10**logtemp
+
+    rho = rho[:,0]
+    sigma = sigma[0,:]
+
+    idx_good = ( np.logical_not(np.isnan(pressure)) &  
+                 np.logical_not(np.isinf(pressure)) )
+    idx_bad = np.isnan(pressure) | np.isinf(pressure)
+    pressure[idx_bad] = (pressure[idx_good]).mean()
+
+    idx_good = ( np.logical_not(np.isnan(temp)) &  
+                 np.logical_not(np.isinf(temp)) )
+    idx_bad = np.isnan(temp) | np.isinf(temp)
+    temp[idx_bad] = (temp[idx_good]).mean()
+
+    idx_good = ( np.logical_not(np.isnan(mu)) &  
+                 np.logical_not(np.isinf(mu)) )
+    idx_bad = np.isnan(mu) | np.isinf(mu)
+    mu[idx_bad] = (mu[idx_good]).mean()
+
+    pressure_func = interp_rect_spline(rho,sigma,pressure,
+                                       logx=True, logy=True, logz=True)
+    temp_func = interp_rect_spline(rho,sigma,temp,
+                                   logx=True, logy=True, logz=True)
+    mu_func = interp_rect_spline(rho,sigma,mu,
+                                   logx=True, logy=True, logz=True)
+    return pressure_func, temp_func, mu_func
+
+def pressure_mesa(filename='../eos/MESA_EOS/rho_sig_grid'):
+    return pressure_temperature_mesa(filename)[0]
+
+def temperature_mesa(filename='../eos/MESA_EOS/rho_sig_grid'):
+    return pressure_temperature_mesa(filename)[1]
+
+def mu_mesa(filename='../eos/MESA_EOS/rho_sig_grid'):
+    return pressure_temperature_mesa(filename)[2]
+
 def pressure_polytrope(gamma=(5,3), rho_scale=1.0):
     """rho_scale in cgs"""
     # assuming entropy comes from protons, pressure is provided by
