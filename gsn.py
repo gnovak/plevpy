@@ -5,6 +5,149 @@
 #
 
 ####################
+### Comparing SCVH EOS to my hacked up version
+####################
+import structure_fork_dss
+import structure
+import pylab as pl
+
+exts = ['png', 'eps', 'pdf']
+
+def write(filename):    
+    for ext in exts:
+        pl.savefig(filename +'.'+ext) 
+
+def gsn_vs_scvh_grid(Y=1e-5):
+    """Produce data tables for a few contour plots"""
+    # SCVH tables go from logP = 4 to 19
+    # and log T = 2.1 to 7.06
+
+    # SCVH 
+    S_of_PT, rho_of_PT = structure_fork_dss.make_the_tables(Y=1e-5)
+
+    # My EOS
+    nn_PT, sig_PT = structure.eos_gsn_pt()
+
+    log_pp = linspace(4,19,200)
+    log_tt = linspace(2,7,200)
+    log_PP, log_TT = structure.make_grid(log_pp, log_tt)
+    
+    rho_gsn = 1.67e-24*nn_PT(10**log_PP, 10**log_TT)
+    sig_gsn = sig_PT(10**log_PP, 10**log_TT)
+    rho_scvh = rho_of_PT(10**log_PP, 10**log_TT)
+    sig_scvh = S_of_PT(10**log_PP, 10**log_TT)
+    return log_PP, log_TT, rho_gsn, sig_gsn, rho_scvh, sig_scvh
+
+def rho_gsn(log_PP, log_TT, rho_gsn, sig_gsn, rho_scvh, sig_scvh):
+    # Data from gsn_vs_scvh_grid()
+    """Contour plot comparing the value of the density from my cooked
+    up equation of state vs. the density from the SCvH equation of
+    state."""
+    pl.clf()
+    result = log10(rho_gsn)
+    levels = arange(-11,4)
+    pl.pcolormesh(log_PP, log_TT, result, vmin=-11, vmax=4)
+    pl.colorbar()
+    pl.contour(log_PP, log_TT, result, levels, colors='k')    
+    pl.xlabel('log P (cgs)')
+    pl.ylabel('log T (K)')
+    pl.title(r'$\log \, \rho_{\rm GSN}$')
+    pl.draw()
+
+def rho_scvh(log_PP, log_TT, rho_gsn, sig_gsn, rho_scvh, sig_scvh):
+    # Data from gsn_vs_scvh_grid()
+    """Contour plot comparing the value of the density from my cooked
+    up equation of state vs. the density from the SCvH equation of
+    state."""
+    pl.clf()
+    result = log10(rho_scvh)
+    levels = arange(-11,4)
+    pl.pcolormesh(log_PP, log_TT, result, vmin=-11, vmax=4)
+    pl.colorbar()
+    pl.contour(log_PP, log_TT, result, levels, colors='k')    
+    pl.xlabel('log P (cgs)')
+    pl.ylabel('log T (K)')
+    pl.title(r'$\log \, \rho_{\rm SCvH}$')
+    pl.draw()
+
+
+def sig_gsn(log_PP, log_TT, rho_gsn, sig_gsn, rho_scvh, sig_scvh):
+    # Data from gsn_vs_scvh_grid()
+    """Contour plot comparing the value of the density from my cooked
+    up equation of state vs. the density from the SCvH equation of
+    state."""
+    pl.clf()    
+    #result = log10(sig_gsn)
+    result = sig_gsn
+    #levels = linspace(-2,2,11)
+    pl.pcolormesh(log_PP, log_TT, result)# , vmin=-2, vmax=2)
+    pl.colorbar()
+    #pl.contour(log_PP, log_TT, result, levels, colors='k')    
+    pl.contour(log_PP, log_TT, result, colors='k')    
+    pl.xlabel('log P (cgs)')
+    pl.ylabel('log T (K)')
+    pl.title(r'$\log \, \sigma_{\rm GSN}$')
+    pl.draw()
+
+
+def sig_scvh(log_PP, log_TT, rho_gsn, sig_gsn, rho_scvh, sig_scvh):
+    # Data from gsn_vs_scvh_grid()
+    """Contour plot comparing the value of the density from my cooked
+    up equation of state vs. the density from the SCvH equation of
+    state."""
+    pl.clf()    
+    def good(aa):        
+        bb = array(aa)
+        fill = bb[bb==bb].mean()
+        bb[bb!=bb] = fill
+        return bb
+    # 
+    sig_scvh = good(sig_scvh)
+    result = sig_scvh
+    
+    pl.pcolormesh(log_PP, log_TT, result)
+    pl.colorbar()
+    pl.contour(log_PP, log_TT, result, colors='k')    
+    pl.xlabel('log P (cgs)')
+    pl.ylabel('log T (K)')
+    pl.title(r'$\log \, \sigma_{\rm SCVH}$')
+    pl.draw()
+
+def rho_gsn_vs_rho_scvh(log_PP, log_TT, rho_gsn, sig_gsn, rho_scvh, sig_scvh):
+    # Data from gsn_vs_scvh_grid()
+    """Contour plot comparing the value of the density from my cooked
+    up equation of state vs. the density from the SCvH equation of
+    state."""
+    pl.clf()
+    result = log10(rho_gsn/rho_scvh)
+    pl.pcolormesh(log_PP, log_TT, result, vmin=-1.5,vmax=1.5)
+    pl.colorbar()
+    pl.contour(log_PP, log_TT, result, linspace(-1.5, 1.5, 21), colors='k')    
+    pl.xlabel('log P (cgs)')
+    pl.ylabel('log T (K)')
+    pl.title(r'$\log \, \rho_{\rm GSN} / \rho_{\rm SCvH}$, contours at 0.15 dex')
+    pl.draw()
+
+def sig_gsn_vs_sig_scvh(log_PP, log_TT, rho_gsn, sig_gsn, rho_scvh, sig_scvh):
+    # Data from gsn_vs_scvh_grid()
+    """Contour plot comparing the value of the density from my cooked
+    up equation of state vs. the density from the SCvH equation of
+    state."""
+    pl.clf()
+    result = log10(sig_gsn/sig_scvh)
+    pl.pcolormesh(log_PP, log_TT, result, vmin=-1.5,vmax=1.5)
+    pl.colorbar()
+    pl.contour(log_PP, log_TT, result, linspace(-1.5, 1.5, 21), colors='k')    
+    pl.xlabel('log P (cgs)')
+    pl.ylabel('log T (K)')
+    pl.title(r'$\log \, \sigma_{\rm GSN} / \sigma_{\rm SCvH}$, contours at 0.15 dex')
+    pl.draw()
+
+####################
+### Interpolation Routines
+####################
+
+####################
 # which ones to use:
 # Rbf seems robust.
 # griddata: 'nearest'
@@ -243,8 +386,6 @@ def i7():
     pl.clf()
     pl.pcolormesh(XF, YF, ZF)
     pl.colorbar()
-
-
  
 def make_grid(*axs):
     import operator
