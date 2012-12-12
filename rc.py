@@ -970,6 +970,76 @@ class PlanetGravFast(Planet):
         function of pressure and temperature."""
         return s.p0_cgs*s.kappa(s.p0_cgs, s.t0_cgs)/(s.tau0*s.nn)
 
+def kramer_bf_opacity(X=0.74, Y=0.24, 
+                      ix=0.0, iy=0.0, iz=0.0, A=16, gbf=1.0, tt=1.0):
+    """Give power law opacity parameters, kappa_0, p_exp, t_exp, p0,
+    t0 for bound-free Kramer's opacity, that is:
+
+    [0] * (p / [3])**[1] * (t / [4])**[2]
+
+    X,Y, Z := 1-X-Y are the mass fractions in hydrogen, helium and metals
+
+    ix, iy, iz are the fraction of electrons given up by H, He, and
+    metals respectively.  That is, if iy=0, the helium is neutral,
+    iy=1, the helium is fully ionized.
+
+    A is the atomic number of a "representative" metal atom, which
+    generally doens't make a difference (unless X=Y=iz=0).
+
+    gbf is the bound-free gaunt factor of order unity
+    
+    tt is a "correction" factor generally between 1 and 100."""
+
+    assert 0 <= ix <= 1 and 0 <= iy <= 1 and 0 <= iz <= 1
+    Z=1-X-Y
+    assert Z>=0
+    ionization_factor = (1+ix)*X + 0.5*(0.5 + iy)*Y + (1.0/A + 0.5*iz)*Z    
+    factor = (Y+Z)*(1+X)*gbf/tt
+    return 16.6*factor/ionization_factor, 1, -4.5, 1e6, 1e5
+
+def kramer_ff_opacity(X=0.74, Y=0.24, Z=0.02, 
+                      ix=0.0, iy=0.0, iz=0.0, A=16, gff=1.0):
+    """Give power law opacity parameters, kappa_0, p_exp, t_exp, p0,
+    t0 for bound-free Kramer's opacity, that is:
+
+    [0] * (p / [3])**[1] * (t / [4])**[2]
+
+    X,Y,Z := 1-X-Y are the mass fractions in hydrogen, helium and metals
+
+    ix, iy, iz are the fraction of electrons given up by H, He, and
+    metals respectively.  That is, if iy=0, the helium is neutral,
+    iy=1, the helium is fully ionized.
+
+    A is the atomic number of a "representative" metal atom, which
+    generally doens't make a difference (unless X=Y=iz=0).
+
+    gff is the free-free gaunt factor of order unity"""
+
+    assert 0 <= ix <= 1 and 0 <= iy <= 1 and 0 <= iz <= 1
+    Z=1-X-Y
+    assert Z>=0
+    ionization_factor = (1+ix)*X + 0.5*(0.5 + iy)*Y + (1.0/A + 0.5*iz)*Z    
+    factor = (1-Y-Z)*(1+X)*gff
+    return 0.0141*factor/ionization_factor, 1, -4.5, 1e6, 1e5
+
+def es_opacity(X=0.74, Y=0.24, 
+               ix=1.0, iy=1.0, iz=1.0):
+    """Opacity due to electron scattering for ~low energy electrons.
+    That is, require that the electons be free to do the scattering.
+    For high energy photons, it doesn't matter much if the electrons
+    are in atoms or not.
+
+    X,Y,Z := 1-X-Y are the mass fractions in hydrogen, helium and metals
+
+    ix, iy, iz are the fraction of electrons given up by H, He, and
+    metals respectively.  That is, if iy=0, the helium is neutral,
+    iy=1, the helium is fully ionized."""
+
+    assert 0 <= ix <= 1 and 0 <= iy <= 1 and 0 <= iz <= 1
+    Z=1-X-Y
+    assert Z>=0
+    ionization_factor = ix*X + 0.5*iy*Y + 0.5*iz*Z
+    return (0.4*ionization_factor, 0, 0, 1.0, 1.0)
 
 ###############
 #### Evolution
