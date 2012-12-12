@@ -155,7 +155,19 @@ def test(long=False):
         mm = Planet(t0_cgs=1000, p0_cgs=1e2*1e8, **kw)
         model_test(mm)
 
+        ##############################
+        # RC model specifying root precision
+        mm = Planet(tau0=1000, sig0=9, dtau_rc=1e-3, **kw)
+        model_test(mm)
+        mm = Planet(tau0=1000, p0_cgs=1e2*1e6, dtau_rc=1e-3, **kw)
+        model_test(mm)
+        mm = Planet(t0_cgs=1000, sig0=9, dtau_rc=1e-3, **kw)
+        model_test(mm)
+        mm = Planet(t0_cgs=1000, p0_cgs=1e2*1e8, dtau_rc=1e-3, **kw)
+        model_test(mm)
+
     def test_grav_model():
+        
 
         ##############################
         # Gravity model w/ constant opacity
@@ -166,6 +178,17 @@ def test(long=False):
         mm = PlanetGrav(t0_cgs=1000, sig0=9, kappa_cgs=0.2, **kw)
         model_test(mm)
         mm = PlanetGrav(t0_cgs=1000, p0_cgs=1e2*1e8, kappa_cgs=0.2, **kw)
+        model_test(mm)
+
+        ##############################
+        # Gravity model w/ constant opacity specifying root positions
+        mm = PlanetGrav(tau0=1000, sig0=9, kappa_cgs=0.2, dtau_rc=1e-4, dtint=1e-2, dgg=0.1, **kw)
+        model_test(mm)
+        mm = PlanetGrav(tau0=1000, p0_cgs=1e2*1e6, kappa_cgs=0.2, dtau_rc=1e-4, dtint=1e-2, dgg=0.1, **kw)
+        model_test(mm)
+        mm = PlanetGrav(t0_cgs=1000, sig0=9, kappa_cgs=0.2, dtau_rc=1e-4, dtint=1e-2, dgg=0.1, **kw)
+        model_test(mm)
+        mm = PlanetGrav(t0_cgs=1000, p0_cgs=1e2*1e8, kappa_cgs=0.2, dtau_rc=1e-4, dtint=1e-2, dgg=0.1, **kw)
         model_test(mm)
 
         ##############################
@@ -193,6 +216,18 @@ def test(long=False):
         mm = PlanetGrav(gg_cgs=58600, t0_cgs=100, sig0=9, kappa_cgs=0.2, **kw2)
         model_test(mm)
         mm = PlanetGrav(gg_cgs=58600, t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=0.2, **kw2)
+        model_test(mm)
+
+        ##############################
+        # Gravity model solving for surface grav, specifying root precisions
+
+        mm = PlanetGrav(gg_cgs=58600, tau0=1000, sig0=9, kappa_cgs=0.2, dtau_rc=1e-4, dtint=1e-2, dgg=0.1, **kw2)
+        model_test(mm)
+        mm = PlanetGrav(gg_cgs=58600, tau0=1000, p0_cgs=4.5e6, kappa_cgs=0.2, dtau_rc=1e-4, dtint=1e-2, dgg=0.1, **kw2)
+        model_test(mm)
+        mm = PlanetGrav(gg_cgs=58600, t0_cgs=100, sig0=9, kappa_cgs=0.2, dtau_rc=1e-4, dtint=1e-2, dgg=0.1, **kw2)
+        model_test(mm)
+        mm = PlanetGrav(gg_cgs=58600, t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=0.2, dtau_rc=1e-4, dtint=1e-2, dgg=0.1, **kw2)
         model_test(mm)
 
         ##############################
@@ -225,6 +260,18 @@ def test(long=False):
         model_test(mm)
 
         ##############################
+        # Fast Gravity model w/ constant opacity, specifying root precisions
+        kap = (0.2, 0, 0, 1.0, 1.0)
+        mm = PlanetGravFast(tau0=1000, sig0=9, kappa_cgs=kap, dtau_rc=1e-3, dtint=1e-3, **kw2)
+        model_test(mm)
+        mm = PlanetGravFast(tau0=1000, p0_cgs=1e2*1e6, kappa_cgs=kap, dtau_rc=1e-3, dtint=1e-3, **kw2)
+        model_test(mm)
+        mm = PlanetGravFast(t0_cgs=1000, sig0=9, kappa_cgs=kap, dtau_rc=1e-3, dtint=1e-3, **kw2)
+        model_test(mm)
+        mm = PlanetGravFast(t0_cgs=1000, p0_cgs=1e2*1e8, kappa_cgs=kap, dtau_rc=1e-3, dtint=1e-3, **kw2)
+        model_test(mm)
+
+        ##############################
         # Fast Gravity model w/ constant functional opacity
         kap = (0.2, 1, 1, 1.0, 1.0)
         mm = PlanetGravFast(tau0=1000, sig0=9, kappa_cgs=kap, **kw2)
@@ -251,6 +298,19 @@ def test(long=False):
         model_test(mm)
 
         ##############################
+        # Fast Gravity model solving for surface grav with constant opacity, specifying root precicions
+        kap = (0.2, 0, 0, 0.26e6, 100)
+        mm = PlanetGravFast(gg_cgs=58600, tau0=1000, sig0=9, kappa_cgs=kap, dtau_rc=1e-3, dtint=1e-3, **kw2)
+        model_test(mm)
+        # FIXME
+        #mm = PlanetGravFast(gg_cgs=58600, tau0=1000, p0_cgs=4.5e6, kappa_cgs=kap, dtau_rc=1e-3, dtint=1e-3, **kw2)
+        model_test(mm)
+        mm = PlanetGravFast(gg_cgs=58600, t0_cgs=100, sig0=9, kappa_cgs=kap, dtau_rc=1e-3, dtint=1e-3, **kw2)
+        model_test(mm)
+        mm = PlanetGravFast(gg_cgs=58600, t0_cgs=100, p0_cgs=4.5e6, kappa_cgs=kap, dtau_rc=1e-3, dtint=1e-3, **kw2)
+        model_test(mm)
+
+        ##############################
         # Fast Gravity model solving for surface with functional opacity 
         kap = (0.2, 1, 1, 0.26e6, 100)
         mm = PlanetGravFast(gg_cgs=58600, tau0=1000, sig0=9, kappa_cgs=kap, **kw2)
@@ -268,7 +328,7 @@ def test(long=False):
                   tint_cgs=75, gamma=1.67, dd=1.5)
 
     test_basic_model()
-    #test_grav_model()
+    test_grav_model()
     test_grav_fast_model()
 
 def all_figs():
