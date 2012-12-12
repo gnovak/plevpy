@@ -1232,8 +1232,8 @@ def plot_model_evolution(ts, sig_time, mass, mms):
     pl.draw()
 
 def evolution_plot(ts_gyr=linspace(0, 0.01, 10), mass=2e30, 
-                   model=PlanetGravFast, 
-                   gg_cgs=5974.0, kappa_cgs=0.2, tau0=1000, sig0=13.0, **kw):
+                   model=PlanetGravFast, kappa_cgs=(1.0, 1.0, 0, 5e3, 100), 
+                   gg_cgs=5974.0, tau0=1000, sig0=13.0, **kw):
     """Plot the luminosity, entropy, etc of a planet as a function of
     time."""
 
@@ -2045,7 +2045,7 @@ def plot_single_channel(filename=None):
         
     if filename: [pl.savefig(filename +'.'+ext) for ext in exts]
 
-def plot_multiple_solutions():
+def plot_multiple_solutions(fbon = 0.58, tint=100):
     """Flux mismatch as a function of optical depth showing multiple
     solutions for rad/conv boundray"""
     def t0_from_taurc(xx):
@@ -2060,11 +2060,11 @@ def plot_multiple_solutions():
     dd = 1.5
     nn = 1.0
     gamma = 1.67
-
-    fbon = 0.58
+    
     alpha = fbon*nn*gamma/(4.0*(gamma-1))
+
     kw = dict(dd=dd, nn=nn, gamma=gamma, 
-              tau0=2000, tint_cgs=100, sig0=10)
+              tau0=2000, tint_cgs=tint, sig0=10)
     mm = Planet(alpha=alpha, k1=0.1, t1_cgs=130, **kw)
     ftot = mm.f1_cgs + mm.f2_cgs + mm.fint_cgs
 
