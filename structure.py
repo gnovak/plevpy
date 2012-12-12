@@ -261,18 +261,24 @@ def pressure_gsn_one_nn_kt(nn, tt, mm, ff, nexp, Gamma, _hbar, _cc):
     pp.append(dominates(rm, kt, 1/ff[4], nexp[4])*dominates(kt, ef, 1/ff[0], nexp[0]) * nn*kt)
     
     # non-relativisitic degenerate pressure
-    factor = 3**(2/3.0)*np.pi**(4/3.0)/40.0
+    # factor = 3**(2/3.0)*np.pi**(4/3.0)/40.0
+    # FIXME -- factor of 8 in comparison to actual value, check notes.
+    factor = 3**(2/3.0)*np.pi**(4/3.0)/5.0
     pp.append(dominates(rm, ef, 1/ff[1], nexp[1])*dominates(ef, kt, ff[0], nexp[0]) * factor * (_hbar**2/mm)*nn**(5/3.0))
 
     # relativistic degenerate pressure
-    factor = 3**(4/3.0)*np.pi**(2/3.0)/8.0
+    # FIXME -- factor 1.5 between original value and actual value, check notes.
+    # factor = 3**(4/3.0)*np.pi**(2/3.0)/8.0
+    factor = 3**(1/3.0)*np.pi**(2/3.0)/4.0
     pp.append(dominates(ef, rm, ff[1], nexp[1])*dominates(rm, kt, 1/ff[2], nexp[2]) * factor * (_hbar*_cc)*nn**(4/3.0))
 
     # relativistic degenerate pressure when thermal en is greater than
     # rest mass.  Excite additional degrees of freedom, and the
     # pressure scales as g^(-1/3) where g is the degeneracy.  So put
     # in that (extremely minor) correction.
-    factor = 3**(4/3.0)*np.pi**(2/3.0)/8.0 
+    # FIXME -- factor 1.5 here, too, see above
+    # factor = 3**(4/3.0)*np.pi**(2/3.0)/8.0 
+    factor = 3**(1/3.0)*np.pi**(2/3.0)/4.0 
     factor = factor * (Gamma/2.0)**(-1/3.0)
     pp.append(dominates(ef, kt, ff[3], nexp[3])*dominates(kt, rm, ff[2], nexp[2]) * factor * (_hbar*_cc)*nn**(4/3.0))
     
