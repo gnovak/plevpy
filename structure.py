@@ -63,8 +63,12 @@ import pylab
 # eos_parameters = dict(gamma=(5,3))
 
 eos = 'gsn'
+#eos = 'mesa'
 eos_parameters = dict()
-    
+
+# Make sure the analytic "toy" EOS always exists.
+gsn_natural_parameters = dict()
+
 ##############################
 # Physical parameters
 BAR = 1e6 # cgs
@@ -1508,11 +1512,14 @@ def aeos_find_nn_tt_given(pp, sigma):
 ##############################
 eos = eos.lower()
 if eos == 'scvh':
+    1/0
     global_pressure = pressure_scvh(**eos_parameters)
 elif eos == 'polytrope':
+    1/0
     global_pressure = pressure_polytrope(**eos_parameters)
 elif eos == 'gsn':
-    global_pressure = pressure_gsn(**eos_parameters)
+    # global_pressure = pressure_gsn(**eos_parameters)
+    global_density = None 
 elif eos == 'mesa':
     global_density = density_mesa(**eos_parameters)
 else:
