@@ -177,6 +177,22 @@ def interp_spline(X,Y,Z,logx=True, logy=True, logz=True):
         return result
     return interpolator
 
+
+def interp_1d(xx,yy,logx=True, logy=True):
+
+    xx = np.log(xx) if logx else xx
+    yy = np.log(yy) if logy else yy
+
+    internal = scipy.interpolate.interp1d(xx, yy)
+    
+    def interpolator(uu):
+        uu = np.log(uu) if logx else uu
+        ww = internal(uu)
+        result = np.exp(ww) if logy else ww
+        return result
+
+    return interpolator
+    
 def interp_rect_spline(xx,yy,Z,logx=True, logy=True, logz=True, kx=5, ky=5):
     """interplation using splines on a rectangular grid."""
     # this one is different:  needs rectangular grid, so enforce this in the arguments.
