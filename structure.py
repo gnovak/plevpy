@@ -2058,7 +2058,9 @@ def hse(pc=None, sigma=5.0, filename=None,
         p_models.append(np.exp(lp))
         m_models.append(np.exp(lm))
         r_models.append(np.exp(lr))
-        rho_models.append(np.exp(log_rho(lp)))
+        # FIXME -- make less annoying
+        sigma_arr = 0*lp + sigma
+        rho_models.append(density(np.exp(lp), sigma_arr))
             
     p_models = np.array(p_models)
     m_models = np.array(m_models)
