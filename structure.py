@@ -1016,6 +1016,11 @@ def eos_gsn_pt_tables_internal(ps=np.logspace(4,19,60),
 
     return ps, ts, nns, sigmas
 
+# Create my EOS functions of "natural" variables, which must always exist
+gsn_natural_pressure = pressure_gsn_nn_kt(**gsn_natural_parameters)
+gsn_natural_entropy = entropy_gsn_nn_kt(**gsn_natural_parameters)
+gsn_natural_energy = energy_gsn_nn_kt(**gsn_natural_parameters)
+
 eos_gsn_pt_tables = memoize(eos_gsn_pt_tables_internal)
 #eos_gsn_pt_tables = eos_gsn_pt_tables_internal
 
