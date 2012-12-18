@@ -419,6 +419,13 @@ def pressure_polytrope(gamma=(5,3), rho_scale=1.0):
 ### gives desired entropy for a given density, then using that
 ### temperature to find the pressure.
 ##############################
+def dominates(xx,yy,ff=1.0, nexp=2.0):
+    """Smoothly returns 1 if xx/yy is greater than ff, zero
+    otherwise.  nexp controls the steepness of the switch, with
+    larger values indicating steeper switches."""        
+    return 1/(1.0+(xx/(ff*yy))**-nexp)
+
+
 def pressure_gsn(**kw):
     """Return a function that computes pressure based on interpolation
 on a grid that's rectangular in density and entropy.
@@ -472,12 +479,6 @@ def pressure_gsn_one_nn_kt(nn, tt, mm, ff, nexp, Gamma, _hbar, _cc):
     from degenerate R gas to degenerate R e+e- gas when kt/rm > ff[2]
     from R gas to degenerate R e+e- gas when ef/kt > ff[3]
     from ideal gas to R gas when kt/rm > ff[4]"""
-
-    def dominates(xx,yy,ff=1.0, nexp=2.0):
-        """Smoothly returns 1 if xx/yy is greater than ff, zero
-        otherwise.  nexp controls the steepness of the switch, with
-        larger values indicating steeper switches."""        
-        return 1/(1.0+(xx/(ff*yy))**-nexp)
 
     nn, tt = np.asarray(nn), np.asarray(tt)
 
@@ -539,11 +540,6 @@ def entropy_gsn_one_nn_kt(nn, tt, mm, ff, nexp, Gamma, _hbar, _cc):
     from degenerate R gas to degenerate R e+e- gas when kt/rm > ff[2]
     from R gas to degenerate R e+e- gas when ef/kt > ff[3]
     from ideal gas to R gas when kt/rm > ff[4]"""
-    def dominates(xx,yy,ff=1.0, nexp=2.0):
-        """Smoothly returns 1 if xx/yy is greater than ff, zero
-        otherwise.  nexp controls the steepness of the switch, with
-        larger values indicating steeper switches."""        
-        return 1/(1.0+(xx/(ff*yy))**-nexp)
 
     nn, tt = np.asarray(nn), np.asarray(tt)
 
