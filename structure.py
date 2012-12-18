@@ -337,51 +337,63 @@ def pressure_scvh(other_arg, filename='table'):
     #sigma_table = np.loadtxt(filename)
     return pressure
 
-def pressure_temperature_mesa(filename='../eos/MESA_EOS/rho_sig_grid'):
-    logrho = np.loadtxt(filename + '_logrho.txt')
-    sigma = np.loadtxt(filename + '_sigma.txt')
+# def pressure_temperature_mesa(filename='../eos/MESA_EOS/rho_sig_grid'):
+#     logrho = np.loadtxt(filename + '_logrho.txt')
+#     sigma = np.loadtxt(filename + '_sigma.txt')
+#     logpressure = np.loadtxt(filename + '_logP.txt')
+#     logtemp = np.loadtxt(filename + '_logT.txt')
+#     mu = np.loadtxt(filename + '_mu.txt')
+#     rho = 10**logrho
+#     pressure = 10**logpressure
+#     temp = 10**logtemp
+#     rho = rho[:,0]
+#     sigma = sigma[0,:]
+#     clean_array(temp)
+#     clean_array(rho)
+#     clean_array(mu)    
+#     rho_func = interp_rect_spline(rho,sigma,pressure,
+#                                        logx=True, logy=True, logz=True)
+#     temp_func = interp_rect_spline(rho,sigma,temp,
+#                                    logx=True, logy=True, logz=True)
+#     mu_func = interp_rect_spline(rho,sigma,mu,
+#                                    logx=True, logy=True, logz=True)
+#     return rho_func, temp_func, mu_func
+
+
+def density_temperature_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
+    def clean_array(xx):
+        idx_good = ( np.logical_not(np.isnan(xx)) &  
+                     np.logical_not(np.isinf(xx)) )
+        idx_bad = np.isnan(xx) | np.isinf(xx)
+        xx[idx_bad] = (xx[idx_good]).mean()
     logpressure = np.loadtxt(filename + '_logP.txt')
+    sigma = np.loadtxt(filename + '_sigma.txt')
+    logrho = np.loadtxt(filename + '_logrho.txt')
     logtemp = np.loadtxt(filename + '_logT.txt')
     mu = np.loadtxt(filename + '_mu.txt')
-
-    rho = 10**logrho
-    pressure = 10**logpressure
-    temp = 10**logtemp
-
-    rho = rho[:,0]
+    rho = 10**logrho; pressure = 10**logpressure; temp = 10**logtemp
+    pressure = pressure[:,0]
     sigma = sigma[0,:]
+    clean_array(rho); clean_array(temp); clean_array(mu)
+    rho_func = interp_rect_spline(pressure,sigma,rho, logx=True, logz=True)
+    temp_func = interp_rect_spline(pressure,sigma,temp, logx=True, logz=True)
+    mu_func = interp_rect_spline(pressure,sigma,mu, logx=True, logz=True)
+    return rho_func, temp_func, mu_func
 
-    idx_good = ( np.logical_not(np.isnan(pressure)) &  
-                 np.logical_not(np.isinf(pressure)) )
-    idx_bad = np.isnan(pressure) | np.isinf(pressure)
-    pressure[idx_bad] = (pressure[idx_good]).mean()
+# def pressure_mesa(filename='../eos/MESA_EOS/rho_sig_grid'):
+#     # return pressure_temperature_mesa(filename)[0]
 
-    idx_good = ( np.logical_not(np.isnan(temp)) &  
-                 np.logical_not(np.isinf(temp)) )
-    idx_bad = np.isnan(temp) | np.isinf(temp)
-    temp[idx_bad] = (temp[idx_good]).mean()
+def density_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
+    return density_temperature_mesa(filename)[0]
+    # return pressure_temperature_mesa(filename)[0]
 
-    idx_good = ( np.logical_not(np.isnan(mu)) &  
-                 np.logical_not(np.isinf(mu)) )
-    idx_bad = np.isnan(mu) | np.isinf(mu)
-    mu[idx_bad] = (mu[idx_good]).mean()
+def temperature_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
+    return density_temperature_mesa(filename)[1]
+    # return pressure_temperature_mesa(filename)[1]
 
-    pressure_func = interp_rect_spline(rho,sigma,pressure,
-                                       logx=True, logy=True, logz=True)
-    temp_func = interp_rect_spline(rho,sigma,temp,
-                                   logx=True, logy=True, logz=True)
-    mu_func = interp_rect_spline(rho,sigma,mu,
-                                   logx=True, logy=True, logz=True)
-    return pressure_func, temp_func, mu_func
-
-def pressure_mesa(filename='../eos/MESA_EOS/rho_sig_grid'):
-    return pressure_temperature_mesa(filename)[0]
-
-def temperature_mesa(filename='../eos/MESA_EOS/rho_sig_grid'):
-    return pressure_temperature_mesa(filename)[1]
-
-def mu_mesa(filename='../eos/MESA_EOS/rho_sig_grid'):
-    return pressure_temperature_mesa(filename)[2]
+def mu_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
+    return density_temperature_mesa(filename)[2]
+    # return pressure_temperature_mesa(filename)[2]
 
 def pressure_polytrope(gamma=(5,3), rho_scale=1.0):
     """rho_scale in cgs"""
@@ -1198,7 +1210,7 @@ elif eos == 'polytrope':
 elif eos == 'gsn':
     global_pressure = pressure_gsn(**eos_parameters)
 elif eos == 'mesa':
-    global_pressure = pressure_mesa(**eos_parameters)
+    global_density = density_mesa(**eos_parameters)
 else:
     raise SyntaxError, "Unknown Equation of State: %s" % eos
 
@@ -1649,8 +1661,27 @@ def hse_lane_emden(filename=None, nx = 101, nrho=102):
 ### End of converted matlab routines
 ##############################
 
+def make_global_density(sigma):
+    # for interpolation table
+    rho_min = 1e-30 # cgs
+    rho_max = 1e30 # cgs
+    rho_min = 1e-5
+    rho_max = 1e5
+    n_rho = 10000
+
+    ##############################
+    # set up function to interpolate to get rho
+    rho = np.logspace(np.log10(rho_min),np.log10(rho_max),n_rho)
+    sigma = 0*rho + sigma
+    # FIXME -- temporary hack
+    log_rho_1d = scipy.interpolate.interp1d(np.log(global_pressure(rho, sigma)),
+                                            np.log(rho))
+    def rho(pp, sig):
+        return 10**log_rho_1d(log10(pp))
+    return rho
+        
 def hse(pc=None, sigma=5.0, filename=None, 
-        pressure = global_pressure, 
+        density = global_density, 
         relative_p_min = True, p_min_rel = 1e-9, p_min_abs = 1e-6*bar):
 
     """Find hydrostatic equilibrium using pressure as the independent
@@ -1664,7 +1695,7 @@ def hse(pc=None, sigma=5.0, filename=None,
         lm, lr = yy
         lp = xx
         # Note that we're grabbing sigma from the surrounding context
-        lrho = log_rho(lp)
+        lrho = np.log(density(np.exp(lp), sigma))
         dlm_dlp = - (4*pi/G)*np.exp(4*lr + lp - 2*lm)
         dlr_dlp = - (1/G)*np.exp(lr+lp-lm-lrho)
         return [dlm_dlp, dlr_dlp]
@@ -1672,13 +1703,6 @@ def hse(pc=None, sigma=5.0, filename=None,
     ##############################
     # practical constants
     pi = np.pi
-
-    # for interpolation table
-    rho_min = 1e-30 # cgs
-    rho_max = 1e30 # cgs
-    rho_min = 1e-5
-    rho_max = 1e5
-    n_rho = 10000
 
     # number of values of the pressure to include in a single model calc.
     n_p_model = 100 
@@ -1689,15 +1713,9 @@ def hse(pc=None, sigma=5.0, filename=None,
     # Stop the calculation when pressure reaches a specific value or
     # when pressure reaches a specific fraction of the central
     # pressure.    
-    
-    ##############################
-    # set up function to interpolate to get rho
-    rho = np.logspace(np.log10(rho_min),np.log10(rho_max),n_rho)
-    # FIXME -- temporary hack
-    sigma = 0*rho + sigma
-    log_rho = scipy.interpolate.interp1d(np.log(pressure(rho, sigma)),
-                                         np.log(rho))
 
+    # density = global_density(sigma)
+    
     ##############################
     # loop over central pressures to calculate models
     p_models, m_models, r_models, rho_models = [], [], [], []
@@ -1713,12 +1731,15 @@ def hse(pc=None, sigma=5.0, filename=None,
         # set up central conditions.  This assumes that there's no
         # density cusp at the center, but don't expect it to make much
         # difference even if there was.
-        rhoc = np.exp(log_rho(np.log(the_pc)))
+        rhoc = density(the_pc, sigma)
+
         mc = 4*pi*r_min**3*rhoc / 3.0
 
         # integration in log space, set atol for const fractional
         # error per timestep.  rtol shouldn't be used since it will
         # have a weird mapping into physical space.
+        #derivs([1.1, 2.2], 3.3)
+        
         result = scipy.integrate.odeint(derivs,
                                         [np.log(mc), np.log(r_min)], lp,
                                         rtol=None, atol=1e-4)
