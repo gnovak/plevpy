@@ -593,8 +593,59 @@ def entropy_gsn_one_nn_kt(nn, tt, ffree, mm, ff, nexp, Gamma, _hbar, _cc):
               
     return sum(sigma)
 
-def pressure_gsn_nn_kt(_me=me, ff_e=1.0, nexp_e=4.0, Gamma_e=4.0, 
-                       _mp=mp, ff_p=1.0, nexp_p=4.0, Gamma_p=4.0,
+# FIXME -- this is not kt, should be just tt
+def energy_gsn_one_nn_kt(nn, tt, ffree, mm, ff, nexp, Gamma, _hbar, _cc):
+    """Compute the thermal energy density for one species of particle.  
+
+    Gamma = number of degrees of freedom as fn of energy for rel. gas.
+
+    Make transition:
+    from ideal gas to degenerate NR gas when ef/kt > ff[0]
+    from degenerate NR gas to degenerate R gas when ef/rm > ff[1]
+    from degenerate R gas to degenerate R e+e- gas when kt/rm > ff[2]
+    from R gas to degenerate R e+e- gas when ef/kt > ff[3]
+    from ideal gas to R gas when kt/rm > ff[4]"""
+
+    nn, tt = np.asarray(nn), np.asarray(tt)
+
+    if not np.iterable(ff): ff = 5*[ff]
+    if not np.iterable(nexp): nexp = 5*[nexp]
+
+    compton = _hbar/(mm*_cc)    
+    rm = mm*_cc**2
+    kt = kB*tt
+
+    # Find fermi energy, smoothing between asymptotic limits at
+    # relativistic transition.
+    kf = (np.pi/2.0)**(2.0/3.0) * nn**(1/3.0)
+
+    ef = (dominates(kf, 1.0/compton)*(_hbar*kf*_cc) + 
+          dominates(1.0/compton, kf)*(_hbar**2*kf**2/(2.0*mm)))
+    
+    pp = []
+    # ideal gas 
+    pp.append(dominates(rm, kt, 1/ff[4], nexp[4])*dominates(kt, ef, 1/ff[0], nexp[0]) * ffree*3* nn*kt / 2.0)
+    
+    # non-relativisitic degenerate 
+    pp.append(dominates(rm, ef, 1/ff[1], nexp[1])*dominates(ef, kt, ff[0], nexp[0]) * 4.5*(kB*tt)**2*mm*nn**(5/3.0)/_hbar**2)
+
+    # relativistic degenerate 
+    pp.append(dominates(ef, rm, ff[1], nexp[1])*dominates(rm, kt, 1/ff[2], nexp[2]) * 4.5*(kB*tt)**2*nn*(2/3.0)/(_hbar*_cc))
+
+    # relativistic degenerate when thermal en is greater than rest
+    # mass.  Haven't thought carefully about this yet.  Think I just
+    # pick up factor Gamma
+    pp.append(dominates(ef, kt, ff[3], nexp[3])*dominates(kt, rm, ff[2], nexp[2]) * 4.5*Gamma*(kB*tt)**2*nn*(2/3.0)/(_hbar*_cc))
+    
+    # Relativistic gas.  in this case, fermi energy is meaningless since kt >> ef
+    pp.append((dominates(kt, ef, 1/ff[3], nexp[3])*dominates(ef, rm) + 
+               dominates(kt, rm, ff[4], nexp[4])*dominates(rm, ef)) * Gamma * kt**4)
+              
+    return sum(pp)
+
+def pressure_gsn_nn_kt(tion=1e4, nexp_ion=2, 
+                       _me=me, ff_e=1.0, nexp_e=4.0, Gamma_e=4.0, 
+                       _mp=mp, ff_p=1.0, nexp_p=4.0, Gamma_p=4.0,                       
                        _hbar=hbar, _cc=cc):
     """Make a function that combines the proton and electron
     contribution to the pressure."""
@@ -617,6 +668,19 @@ def entropy_gsn_nn_kt(tion=1e4, nexp_ion=2,
         return (entropy_gsn_one_nn_kt(nn, tt, ffree, mm=_me, ff=ff_e, nexp=nexp_e, Gamma=Gamma_e, _hbar=_hbar, _cc=_cc) + 
                 entropy_gsn_one_nn_kt(nn, tt, 1.0, mm=_mp, ff=ff_p, nexp=nexp_p, Gamma=Gamma_p, _hbar=_hbar, _cc=_cc))
     return entropy_gsn_explicit
+
+def energy_gsn_nn_kt(tion=1e4, nexp_ion=2, 
+                     _me=me, ff_e=1.0, nexp_e=4.0, Gamma_e=4.0, 
+                     _mp=mp, ff_p=1.0, nexp_p=4.0, Gamma_p=4.0,
+                     _hbar=hbar, _cc=cc):
+    """Make a function that combines the proton and electron
+    contribution to the energy."""
+    # serves to fix constants, electron mass, etc.
+    def energy_gsn_explicit(nn,tt):
+        ffree = dominates(tt, tion, 1.0, nexp_ion)
+        return (energy_gsn_one_nn_kt(nn, tt, ffree, mm=_me, ff=ff_e, nexp=nexp_e, Gamma=Gamma_e, _hbar=_hbar, _cc=_cc) + 
+                energy_gsn_one_nn_kt(nn, tt, 1.0, mm=_mp, ff=ff_p, nexp=nexp_p, Gamma=Gamma_p, _hbar=_hbar, _cc=_cc))
+    return energy_gsn_explicit
      
 
 # def eos_gsn_tables_internal(rhos=np.logspace(-5,20,50), 
