@@ -103,6 +103,7 @@ exts = ['pdf', 'png', 'eps']
 # provide a uniform interface to the interpolation routines that I
 # have found to be reasonably robust.
 
+
 def interp_rbf(X,Y,Z,logx=True, logy=True, logz=True):
     """Unstructured interplation using radial basis functions"""
     # X,Y,Z should be physical values.  logx, etc, say whether you
@@ -120,6 +121,7 @@ def interp_rbf(X,Y,Z,logx=True, logy=True, logz=True):
         return np.exp(zz) if logz else zz
 
     return interpolator
+
 
 def interp_griddata(X,Y,Z,logx=True, logy=True, logz=True):
     """Unstructured interplation using nearest neighbors for now."""
@@ -144,6 +146,7 @@ def interp_griddata(X,Y,Z,logx=True, logy=True, logz=True):
 
         return np.exp(zz) if logz else zz
     return interpolator
+
 
 def interp_spline(X,Y,Z,logx=True, logy=True, logz=True):
     """Unstructured interplation using splines."""
@@ -197,6 +200,7 @@ def interp_1d(xx,yy,logx=True, logy=True):
 
     return interpolator
     
+
 def interp_rect_spline(xx,yy,Z,logx=True, logy=True, logz=True, kx=5, ky=5):
     """interplation using splines on a rectangular grid."""
     # this one is different:  needs rectangular grid, so enforce this in the arguments.
@@ -240,6 +244,7 @@ def hashKey(*a, **kw):
     """Returns a unique key given a bunch of python objects as arguments"""
     return hashlib.sha256(cPickle.dumps((a, kw), protocol=-1)).digest()
 
+
 def can(obj, file, protocol=2):
     """More convenient interactive syntax for pickle"""
     if type(file) is str: f=open(file,'wb')
@@ -248,6 +253,7 @@ def can(obj, file, protocol=2):
     cPickle.dump(obj, f, protocol=protocol)
 
     if type(file) is str: f.close()
+
 
 def uncan(file):
     """More convenient interactive syntax for pickle"""
@@ -260,6 +266,7 @@ def uncan(file):
     if type(file) is str: f.close()
 
     return obj
+
 
 def memoize(f, withFile=True, keyf=hashKey):
     """Return a 'fast' version of long-running function f If called
@@ -319,6 +326,7 @@ def read_atmospheric_bc_table(filename="../bound_py_isotropic_default.dat"):
     assert all(Teff[0,:] == Teff[0,0])
     assert all(logg[:,0] == logg[0,0])    
     return Teff, logg, sigma
+
 
 def atmospheric_bc(filename="../bound_py_isotropic_default.dat", 
                    s_axis=np.linspace(5,11,100),
@@ -387,13 +395,16 @@ def density_temperature_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
 # def pressure_mesa(filename='../eos/MESA_EOS/rho_sig_grid'):
 #     # return pressure_temperature_mesa(filename)[0]
 
+
 def density_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
     return density_temperature_mesa(filename)[0]
     # return pressure_temperature_mesa(filename)[0]
 
+
 def temperature_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
     return density_temperature_mesa(filename)[1]
     # return pressure_temperature_mesa(filename)[1]
+
 
 def mu_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
     return density_temperature_mesa(filename)[2]
@@ -412,11 +423,14 @@ def read_the_stuff(the_eos_directory):
             print fullpath
     return result
 
+
 def canonize(name):
     return '.'.join((name.split('/')[-1]).split('.')[:-1])
 
+
 def getS(p_values, t_values, S_grid):
     return interp_rect_spline(p_values,t_values,S_grid, False, False, False)
+
 
 def make_the_tables(Y = 0.25, dirpath = 'reformated_eos_tables/i/'):
     """Y = helium mass fraction"""
@@ -602,6 +616,7 @@ method = scheme for finding desired value of entropy.  Can be 'bisect' or 'newto
     rhos, sigmas, pp, tt = eos_gsn_tables(**kw)
     return interp_rect_spline(rhos,sigmas,pp,logx=True, logy=True, logz=True)
 
+
 def temperature_gsn(**kw):
     """Return a function that computes temperature based on interpolation
 on a grid that's rectangular in density and entropy.
@@ -622,6 +637,7 @@ method = scheme for finding desired value of entropy.  Can be 'bisect' or 'newto
 """
     rhos, sigmas, pp, tt = eos_gsn_tables(**kw)
     return interp_rect_spline(rhos,sigmas,tt,logx=True, logy=True, logz=True)
+
 
 # FIXME -- this is not kt, should be just tt
 def pressure_gsn_one_nn_kt(nn, tt, ffree, mm, ff, nexp, Gamma, _hbar, _cc):
@@ -693,6 +709,7 @@ def pressure_gsn_one_nn_kt(nn, tt, ffree, mm, ff, nexp, Gamma, _hbar, _cc):
               
     return sum(pp)
 
+
 # FIXME -- this is not kt, should be just tt
 def entropy_gsn_one_nn_kt(nn, tt, ffree, mm, ff, nexp, Gamma, _hbar, _cc):
     """Compute entropy for one species of particle.  
@@ -748,6 +765,7 @@ def entropy_gsn_one_nn_kt(nn, tt, ffree, mm, ff, nexp, Gamma, _hbar, _cc):
               
     return sum(sigma)
 
+
 # FIXME -- this is not kt, should be just tt
 def energy_gsn_one_nn_kt(nn, tt, ffree, mm, ff, nexp, Gamma, _hbar, _cc):
     """Compute the thermal energy density for one species of particle.  
@@ -798,6 +816,7 @@ def energy_gsn_one_nn_kt(nn, tt, ffree, mm, ff, nexp, Gamma, _hbar, _cc):
               
     return sum(pp)
 
+
 def pressure_gsn_nn_kt(tion=1e4, nexp_ion=2, 
                        _me=me, ff_e=1.0, nexp_e=4.0, Gamma_e=4.0, 
                        _mp=mp, ff_p=1.0, nexp_p=4.0, Gamma_p=4.0,                       
@@ -811,6 +830,7 @@ def pressure_gsn_nn_kt(tion=1e4, nexp_ion=2,
                 + pressure_gsn_one_nn_kt(nn, tt, 1.0, mm=_mp, ff=ff_p, nexp=nexp_p, Gamma=Gamma_p, _hbar=_hbar, _cc=_cc))
     return pressure_gsn_explicit
 
+
 def entropy_gsn_nn_kt(tion=1e4, nexp_ion=2, 
                       _me=me, ff_e=1.0, nexp_e=4.0, Gamma_e=4.0, 
                       _mp=mp, ff_p=1.0, nexp_p=4.0, Gamma_p=4.0,
@@ -823,6 +843,7 @@ def entropy_gsn_nn_kt(tion=1e4, nexp_ion=2,
         return (entropy_gsn_one_nn_kt(nn, tt, ffree, mm=_me, ff=ff_e, nexp=nexp_e, Gamma=Gamma_e, _hbar=_hbar, _cc=_cc) + 
                 entropy_gsn_one_nn_kt(nn, tt, 1.0, mm=_mp, ff=ff_p, nexp=nexp_p, Gamma=Gamma_p, _hbar=_hbar, _cc=_cc))
     return entropy_gsn_explicit
+
 
 def energy_gsn_nn_kt(tion=1e4, nexp_ion=2, 
                      _me=me, ff_e=1.0, nexp_e=4.0, Gamma_e=4.0, 
@@ -843,6 +864,8 @@ def energy_gsn_nn_kt(tion=1e4, nexp_ion=2,
 #                                     _mp=mp, _me=me, _cc=cc, _hbar=hbar,
 #                                     method='bisect', 
 #                                     **kw):
+
+
 def eos_gsn_tables_internal(rhos=np.logspace(-12,4,50), 
                             sigmas=np.logspace(0,2,50), 
                             _mp=mp, _me=me, _cc=cc, _hbar=hbar,
@@ -972,6 +995,7 @@ def eos_gsn_tables_internal(rhos=np.logspace(-12,4,50),
 
 eos_gsn_tables = memoize(eos_gsn_tables_internal)
 
+
 def eos_gsn_pt(**kw):
     """Return a function that computes density and a function that
 computes entropy, both as a function of pressure and temperature based
@@ -997,6 +1021,7 @@ method = scheme for finding desired value of density.  Can be 'bisect' or 'newto
     nn_pt = interp_rect_spline(pp,tt,nn,logx=True, logy=True, logz=True)
     sig_pt = interp_rect_spline(pp,tt,sigmas,logx=True, logy=True, logz=False)
     return nn_pt, sig_pt
+
 
 # Excluding where electrons become relativistic (b/c pressure doesn't
 # depend on density anymore) and setting min and max pressures by
@@ -1184,6 +1209,7 @@ eos_gsn_pt_tables = memoize(eos_gsn_pt_tables_internal)
 ### electrons changes for pressure_gsn EOS
 ##############################
 
+
 def find_region_boundaries(_me, _mp, _hbar, _cc, **kw):
     """Find values of density, entropy, etc, that delimit regions
     where the physics changes for protons and electrons."""
@@ -1253,6 +1279,7 @@ def find_region_boundaries(_me, _mp, _hbar, _cc, **kw):
     result['tt_deg_rel_e'] = ttv
     
     return result
+
 
 def plot_region_boundaries(dd):
     """Make a big plot of what physics is relavant given values of the
@@ -1378,6 +1405,7 @@ def plot_region_boundaries(dd):
 ### this to work well.
 ##############################
 
+
 def pressure_gsn_irregular_interpolation(rhos=None, temps=None,
                  _me=me, ff_e=1.0, nexp_e=4.0, Gamma_e=4.0, 
                  _mp=mp, ff_p=1.0, nexp_p=4.0, Gamma_p=4.0,
@@ -1452,6 +1480,8 @@ def pressure_gsn_irregular_interpolation(rhos=None, temps=None,
 # def pressure_gsn_nn_tt()
 
 # def aeos_guess_pp_sigma(): not necessary
+
+
 def aeos_guess_nn_sigma(pp, tt):
     pi = np.pi
     nqp = (mp*kB*tt/(2*pi*hbar**2))**(3/2.0)
@@ -1490,6 +1520,7 @@ def aeos_guess_nn_sigma(pp, tt):
     # problematic -- as above
 
     return result
+
 
 def aeos_guess_nn_tt(pp, sigma):
     pi = np.pi
@@ -1533,6 +1564,7 @@ def aeos_guess_nn_tt(pp, sigma):
 
     return result
     
+
 def aeos_guess_pp_tt(nn, sigma):
     pi = np.pi
     result = []
@@ -1573,6 +1605,7 @@ def aeos_guess_pp_tt(nn, sigma):
 
     return result
 
+
 def aeos_find_tt_given(nn, sigma):
     # natural eos: pp, sigma function of nn, tt
     def func(logt):
@@ -1611,6 +1644,7 @@ def aeos_find_tt_given(nn, sigma):
         raise RuntimeError, "No root found!"
     return np.exp(logtfin)
 
+
 def aeos_find_nn_given(pp, tt):
     # natural eos: pp, sigma function of nn, tt
     def func(nn):
@@ -1642,6 +1676,7 @@ def aeos_find_nn_given(pp, tt):
     if pfin is None: 
         raise RuntimeError, "No root found!"
     return pfin
+
 
 def aeos_find_nn_tt_given(pp, sigma):
     # natural eos: pp, sigma function of nn, tt
@@ -1680,6 +1715,7 @@ else:
 ### Start of converted matlab routines
 ##############################
 
+
 ##############################
 # Note change in arg order
 def calc_derivatives(PM, r, sigma):
@@ -1707,6 +1743,7 @@ def calc_derivatives(PM, r, sigma):
 # cv log(T) = s + R log(rho) + R log(R)
 # log(T) = s/cv + (R/cv)log(rho) + (R/cv)log(R)
 
+
 def P_of_rho_old(rho,sigma):
 
     mu = 1.2
@@ -1728,6 +1765,7 @@ def P_of_rho_old(rho,sigma):
     # something missing.
     P = K * rho**gamma
     return P
+
 
 def P_of_rho(rho,sigma):
     # Replacing this with expressions from gsn.pdf just to start to
@@ -1764,6 +1802,7 @@ def P_of_rho(rho,sigma):
 # P = K rho**gamma
 # where K = exp((s/kB)*mu*mp*(gamma-1))
 
+
 def rho_of_P(P, sigma, Npts=100):
     # FIXME: DSP: needs fixing
     rho_vec = np.logspace(-15,5,Npts)
@@ -1773,6 +1812,7 @@ def rho_of_P(P, sigma, Npts=100):
     # set up for for interpolation in a single line of code.    
     rho = np.exp(scipy.interp(np.log(P), np.log(P_vec),np.log(rho_vec)))
     return rho
+
 
 def LE_derivatives(uy,x,n):
     # n is polytropic index
@@ -1796,6 +1836,7 @@ def LE_derivatives(uy,x,n):
 ##############################
 ### Find hydrostatic equilibrium by various methods
 ##############################
+
 
 # from integrate_hydrostatic.m
 def hse_old(filename=None):
@@ -1931,6 +1972,7 @@ def hse_old(filename=None):
 
     if filename: 
         [pylab.savefig(filename + '-models.' + ext) for ext in exts]
+
 
 # from integrate_hydrostatic_v02_laneemden.m
 def hse_lane_emden(filename=None, nx = 101, nrho=102):
@@ -2123,6 +2165,7 @@ def hse_lane_emden(filename=None, nx = 101, nrho=102):
 ### End of converted matlab routines
 ##############################
 
+
 def make_global_density(sigma):
     # for interpolation table
     rho_min = 1e-30 # cgs
@@ -2142,6 +2185,7 @@ def make_global_density(sigma):
         return 10**log_rho_1d(log10(pp))
     return rho
         
+
 def hse(pc=None, sigma=5.0, filename=None, 
         density = global_density, 
         relative_p_min = True, p_min_rel = 1e-9, p_min_abs = 1e-6*bar):
@@ -2266,6 +2310,7 @@ def hse(pc=None, sigma=5.0, filename=None,
     
     return p_models, m_models, r_models, rho_models
 
+
 def make_density_function(pressure, sigma, rho=None):
     """ Returns a functions that takes log base e of the pressure and
     returns log base e of the density."""
@@ -2276,6 +2321,7 @@ def make_density_function(pressure, sigma, rho=None):
     log_rho = scipy.interpolate.interp1d(np.log(pressure(rho, sigma)),
                                          np.log(rho))
     return log_rho
+
 
 def one_simple_model(mm, pc, log_rho):
     """This integrates equations of HSE using mass as the independent
@@ -2319,6 +2365,7 @@ def one_simple_model(mm, pc, log_rho):
 
     return lr, lp, lrho
 
+
 def estimate_central_pressure(mm, log_rho, pci=None):
     # estimate of central pressure for a polytrope
     # num = (4*pi)**(1/3) G rho_0**(4/3) M**(2/3) 
@@ -2337,6 +2384,7 @@ def estimate_central_pressure(mm, log_rho, pci=None):
     #     relative_p_min = True, p_min_rel = 1e-9, p_min_abs = 1e-6*bar):
     #hse_gsn(pc=None, sigma=5.0, gamma = (5,3), filename=None)
     pass
+
 
 def one_model(mm, log_rho, pci,
               relative_p_min = True, p_min_rel = 1e-9, p_min_abs = 1e-6*bar):
@@ -2363,11 +2411,13 @@ def one_model(mm, log_rho, pci,
     lr, lp, lrho = one_simple_model(mm, np.exp(lpcf), log_rho)
     return np.exp(lr), np.exp(lp), np.exp(lrho)
 
+
 def grav_pe(rs, rhos):
     igrand = ave(4*np.pi*rs**2*rhos)
     ms = (igrand*np.diff(rs)).cumsum()
     igrand2 = - G*ms*ave(4*np.pi*rs*rhos)
     return (igrand2*np.diff(rs)).sum()
+
 
 def grav_pe_very_slow(rs, rhos):
     # Should take integrals from zero... could add small correction
@@ -2385,6 +2435,7 @@ def grav_pe_very_slow(rs, rhos):
         return - G*m_func(rr)*4*np.pi*rr*rhof(rr)
 
     return scipy.integrate.quad(igrand_2, rs[0], rs[-1])
+
 
 def grav_pe_slow(rs, rhos):
     # Should take integrals from zero... could add small correction
@@ -2411,9 +2462,12 @@ def grav_pe_slow(rs, rhos):
 
     return scipy.integrate.quad(igrand_2, rs[0], rs[-1])
 
+
 ##############################
 ### Utility functions
 ##############################
+
+
 def make_grid(*axs):
     """Take an arbitrary number of 1d arrays and return a "filled-out"
     grid of values suitable for computing things at, e.g. every point
@@ -2440,6 +2494,7 @@ def make_grid(*axs):
         result.append(mesh)
     return result
 
+
 def grid_to_points(*vs):
     """take a (nx, ny, ...) grid of points as produced by make_grid or
     mgrid and produce a list of points with shape (ntps, ndim)"""
@@ -2447,12 +2502,14 @@ def grid_to_points(*vs):
         return vs[0].ravel()
     return np.array([vv.ravel() for vv in vs]).transpose()
 
+
 def popKeys(d, *names):
     """Pull keywords with certain names out of a dictionary.  Return a
     new dict of with the desired names/values, and delete them from
     the original dict.  Typically useful when processing keyword
     args"""
     return dict([(k, d.pop(k)) for k in names if k in d])
+
 
 def ave(a, n=1, axis=-1):
     if n==0: return np.array(a)
@@ -2477,6 +2534,8 @@ def ave(a, n=1, axis=-1):
 ### fact that scipy recently removed the fread functions so I'm
 ### keeping both versions around for a while via if statements
 ##############################
+
+
 def version_string_to_tuple(ss):
     return tuple([int(aa) for aa in ss.split('.')])
 
@@ -2484,6 +2543,7 @@ def version_string_to_tuple(ss):
 # 0.10.0: no
 # circa 0.7: yes
 scipy_has_fwrite = version_string_to_tuple(scipy.__version__) < (0,10)
+
 
 def write_fortran(f, arr, swap=False, pad_type='i'):
     # not sure where this numpy version should happen
@@ -2502,6 +2562,7 @@ def write_fortran(f, arr, swap=False, pad_type='i'):
         arr.tofile(f) 
         pad_array.tofile(f)
         
+
 def read_fortran(f, type_='f', num=None, swap=False, pad_type='i'):
     """Read one unformatted fortran record.
     num = number of data to read.  If None, compute it from the pad word
@@ -2536,6 +2597,7 @@ def read_fortran(f, type_='f', num=None, swap=False, pad_type='i'):
     assert c1 == c2 == dat.nbytes
     return dat
 
+
 def skip_fortran(f, n=1, swap=False, pad_type='i'):
     """Skip one unformatted fortran record.
     intType = specifies width of pad words on the computer where the
@@ -2561,13 +2623,17 @@ def skip_fortran(f, n=1, swap=False, pad_type='i'):
 
         assert c1 == c2 == p2-p1
 
+
 def n_quantum(temp, mm=1.67e-24/1836.0):
     return (mm*kb*temp/(2*pi*hbar**2))**1.5
 
+
 n_quantum_electron = n_quantum 
+
 
 def n_quantum_proton(temp):
     return n_quantum(temp, mm=1.67e-24)
+
 
 def read_all_fortran(f, spec, swap=False, warning=False, intType='i'):
     """Read all fortran data from a file.  spec is a list of types of each block"""
