@@ -1278,6 +1278,232 @@ def pressure_gsn_irregular_interpolation(rhos=None, temps=None,
     return pressure
 
 ##############################
+## Analytic EOS
+##
+## Try to write set of functions that return thermodynamic variables
+## given any input set.  The "natural" variables are rho and temp
+## since it's easy to write an explicit expression for entropy and
+## pressure.  But I may want other input variables.  
+## 
+## Do this by solving for all combinations of thermo variables in the
+## various limits, producing a list of guesses that are valid in each
+## limit, and then trying to find the root of the full expressions of
+## p and s.
+## 
+## For the moment this assumes standard electron, proton mass, etc.  
+##############################
+
+# def entropy_gsn_nn_tt()
+# def pressure_gsn_nn_tt()
+
+# def aeos_guess_pp_sigma(): not necessary
+def aeos_guess_nn_sigma(pp, tt):
+    pi = np.pi
+    nqp = (mp*kB*tt/(2*pi*hbar**2))**(3/2.0)
+
+    result = []
+
+    # ideal gas
+    nn = pp/(kB*tt)
+    sigma = np.log(nqp*kB*tt/pp) + 5/2.0
+    result.append((nn, sigma))
+
+    # degenerate electrons, nondegenerate protons
+    nn = ((5*me)/(hbar**2*pi**(4/3.0)*3**(2/3.0)))**(3/5.0) * pp**(3/5.0)
+    sigma = np.log(nqp/nn) + 5/2.0
+    result.append((nn,sigma))
+
+    # degenerate electrons, degenerate protons
+    nn = (5*me/(hbar**2*pi**(4/3.0)*3**(2/3.0)))**(3/5.0) * pp**(3/5.0)
+    sigma = (2*pi**(5/3.0)/3**(2/3.0)) * (nqp/nn)**(2/3.0)
+    result.append((nn,sigma))
+
+    # degenerate relativistic electrons, degenerate protons
+    nn = (4/(3**(1/3.0)*pi**(2/3.0)*hbar*cc))**(3/4.0) * pp**(3/4.0)    
+    sigma = (2*pi**(5/3.0)/3**(2/3.0))*(nqp/nn)**(2/3.0)
+    result.append((nn,sigma))
+
+    # degenerate relativistic electrons, degenerate relativistic protons
+    # same expressions as above
+    # relativistic electrons, nonrelativistic protons
+    #   problematic case -- one equation relates p and t, so you can
+    #   specify inconsistent values.  The other equation relates only
+    #   the product sigma*n (ie, entropy per volume), that is to say
+    #   that entropy per baryon is ill defined.
+
+    # relativistic electrons, relativistic protons
+    # problematic -- as above
+
+    return result
+
+def aeos_guess_nn_tt(pp, sigma):
+    pi = np.pi
+
+    result = []
+
+    # ideal gas
+    kt = (2*pi*hbar**2/mp)**(3/5.0) * np.exp(2*sigma/5.0-1) * pp**(2/5.0)
+    nqp = (mp*kt/(2*pi*hbar**2))**(3/2.0)
+    nn = nqp*np.exp(5/2.0-sigma)
+    result.append((nn,kt/kB))
+
+    # degenerate electrons, nondegenerate protons
+    nn = (5*me/(hbar**2*pi**(4/3.0)*3**(2/3.0)))**(3/5.0) * pp**(3/5.0)
+    kt = (2*pi*hbar**2/mp) * nn**(2/3.0) * np.exp(2*sigma/3.0 - 5/3.0)
+    result.append((nn,kt/kB))
+
+    # degenerate electrons, degenerate protons
+    nn = (5*me/(hbar**2*pi**(4/3.0)*3**(2/3.0)))**(3/5.0) * pp**(3/5.0)
+    kt = (3**(2/3.0)*hbar**2/(pi**(2/3.0)*mp))*sigma*nn**(2/3.0)
+    result.append((nn,kt/kB))
+
+    # degenerate relativistic electrons, degenerate protons
+    nn = (4/(3**(1/3.0)*pi**(2/3.0)*hbar*cc))**(3/4.0) * pp**(3/4.0)
+    kt = ((3**(2/3.0)*hbar**2)/(pi**(2/3.0)*mp)) * sigma * nn**(2/3.0)
+    result.append((nn,kt/kB))
+
+    # degenerate relativistic electrons, degenerate relativistic protons
+    # same expressions as above
+    # relativistic electrons, nonrelativistic protons
+    gamma = 3.0
+    kt = (45*hbar**3*cc**3*pp/(gamma*pi**2))**(1/4.0)
+    nn = 4*pi**2*gamma*kt**3/(45*hbar**3*cc**3*sigma)
+    result.append((nn,kt/kB))
+
+    # relativistic electrons, relativistic protons
+    gamma = 100.0
+    kt = (45*hbar**3*cc**3*pp/(gamma*pi**2))**(1/4.0)
+    nn = 4*pi**2*gamma*kt**3/(45*hbar**3*cc**3*sigma)
+    result.append((nn,kt/kB))
+
+    return result
+    
+def aeos_guess_pp_tt(nn, sigma):
+    pi = np.pi
+    result = []
+
+    # ideal gas
+    kt = (2*pi*hbar**2/mp) * np.exp(2*sigma/3.0 - 5/3.0) * nn**(2/3.0)
+    pp = nn*kt
+    result.append((pp,kt/kB))
+
+    # degenerate electrons, nondegenerate protons
+    pp = (hbar**2*pi**(4/3.0)*3**(2/3.0)/(5*me))**(3/5.0) * pp**(3/5.0)
+    kt = (2*pi*hbar**2/mp) * nn**(2/3.0) * np.exp(2*sigma/3.0 - 5/3.0)
+    result.append((pp,kt/kB))
+
+    # degenerate electrons, degenerate protons
+    pp = (hbar**2*pi**(4/3.0)*3**(2/3.0)/(5*me)) * nn**(5/3.0)
+    kt = (3**(2/3.0)/(mp*pi**2/3.0)) * sigma * nn**(2/3.0)
+    result.append((pp, kt/kB))
+
+    # degenerate relativistic electrons, degenerate protons
+    pp = (3**(1/3.0)*hbar*cc*pi**(2/3.0)/4.0) * nn**(4/3.0)
+    kt = (3**(2/3.0)*hbar**2/(pi**(2/3.0)*mp)) * sigma * nn**(2/3.0)
+    result.append((pp,kt/kB))
+
+    # degenerate relativistic electrons, degenerate relativistic protons
+    # same expressions as above
+    # relativistic electrons, nonrelativistic protons
+    gamma = 3.0
+    kt = (nn*sigma*45*hbar**3*cc**3/(4*pi**2*gamma))**(1/3.0)
+    pp = gamma*pi**2*kt**4/(45*hbar**3*cc**3)
+    result.append((pp,kt/kB))
+
+    # relativistic electrons, relativistic protons
+    gamma = 100.0
+    kt = (nn*sigma*45*hbar**3*cc**3/(4*pi**2*gamma))**(1/3.0)
+    pp = gamma*pi**2*kt**4/(45*hbar**3*cc**3)
+    result.append((pp,kt/kB))
+
+    return result
+
+def aeos_find_tt_given(nn, sigma):
+    # natural eos: pp, sigma function of nn, tt
+    def func(logt):
+        result = sigma - gsn_natural_entropy(nn, np.exp(logt))
+        print result
+        return result
+
+    def find_root_bisect(logt0):
+        # initial guess at range
+        logtl, logth = logt0, logt0
+
+        # expand range until it includes the root
+        while(func(logtl) > 0.0):
+            print "low", logtl
+            if logtl <= 0.0: raise RuntimeError
+            tl /= 2.0
+        while(func(logth) < 0.0):
+            print "high", logth
+            if logth >= np.log(1e10): raise RuntimeError
+            logth += 0.3
+        
+        # find the root
+        return scipy.optimize.bisect(func, logtl, logth)
+
+    def find_root_newton(logt0):
+        return scipy.optimize.newton(func, logt0)
+    
+    logtfin = None
+    for pp, tt in aeos_guess_pp_tt(nn, sigma):
+        try:
+            print "trying", tt
+            logtfin = find_root_newton(np.log(tt))
+        except RuntimeError: continue
+
+    if logtfin is None: 
+        raise RuntimeError, "No root found!"
+    return np.exp(logtfin)
+
+def aeos_find_nn_given(pp, tt):
+    # natural eos: pp, sigma function of nn, tt
+    def func(nn):
+        return pp - pressure(nn, tt)
+
+    def find_root_bisect(n0):
+        # initial guess at range
+        nl, nh = t0, t0
+
+        # expand range until it includes the root
+        while(func(nl) > 0):
+            if nl == 0.0: raise RuntimeError
+            nl /= 2.0
+        while(func(nh) < 0):
+            if np.isinf(nh): raise RuntimeError
+            nh *= 2.0
+            
+        # find the root
+        return scipy.optimize.bisect(func, nl, nh)
+
+    def find_root_newton(n0):
+        return scipy.optimize.newton(func, n0)
+    
+    pfin = None
+    for nn, tt in guess_nn_tt(pp, tt):
+        try:  pfin = find_root_bisect(nn)
+        except: continue
+
+    if pfin is None: 
+        raise RuntimeError, "No root found!"
+    return pfin
+
+def aeos_find_nn_tt_given(pp, sigma):
+    # natural eos: pp, sigma function of nn, tt
+    def func(xx):
+        nn, tt = xx
+        return [sigma - entropy(nn, tt), pp - pressure(nn, tt)]
+
+    nfin, tfin = None, None
+    for pp, tt in guess_nn_tt(pp, sigma):
+        try:  nfin, tfin = scipy.optimize.newton(func, x0)
+        except: continue
+
+    if nfin is None or tfin is None: 
+        raise RuntimeError, "No root found!"
+    return nfin, tfin
+
+##############################
 ## EOS
 ##############################
 eos = eos.lower()
