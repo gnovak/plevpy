@@ -468,8 +468,13 @@ method = scheme for finding desired value of entropy.  Can be 'bisect' or 'newto
     rhos, sigmas, pp, tt = eos_gsn_tables(**kw)
     return interp_rect_spline(rhos,sigmas,tt,logx=True, logy=True, logz=True)
 
-def pressure_gsn_one_nn_kt(nn, tt, mm, ff, nexp, Gamma, _hbar, _cc):
+# FIXME -- this is not kt, should be just tt
+def pressure_gsn_one_nn_kt(nn, tt, ffree, mm, ff, nexp, Gamma, _hbar, _cc):
     """Compute pressure for one species of particle.  
+
+    nn = total number density
+    tt = temperature
+    ffree = fraction of given particles that are free.
 
     Gamma = number of degrees of freedom as fn of energy for rel. gas.
 
@@ -498,17 +503,19 @@ def pressure_gsn_one_nn_kt(nn, tt, mm, ff, nexp, Gamma, _hbar, _cc):
     
     pp = []
     # ideal gas pressure
-    pp.append(dominates(rm, kt, 1/ff[4], nexp[4])*dominates(kt, ef, 1/ff[0], nexp[0]) * nn*kt)
+    pp.append(dominates(rm, kt, 1/ff[4], nexp[4])*dominates(kt, ef, 1/ff[0], nexp[0]) * ffree*nn*kt)
     
     # non-relativisitic degenerate pressure
     # factor = 3**(2/3.0)*np.pi**(4/3.0)/40.0
     # FIXME -- factor of 8 in comparison to actual value, check notes.
+    # degeneracy pressure relevant whether or not particles are free
     factor = 3**(2/3.0)*np.pi**(4/3.0)/5.0
     pp.append(dominates(rm, ef, 1/ff[1], nexp[1])*dominates(ef, kt, ff[0], nexp[0]) * factor * (_hbar**2/mm)*nn**(5/3.0))
 
     # relativistic degenerate pressure
     # FIXME -- factor 1.5 between original value and actual value, check notes.
     # factor = 3**(4/3.0)*np.pi**(2/3.0)/8.0
+    # degeneracy pressure relevant whether or not particles are free
     factor = 3**(1/3.0)*np.pi**(2/3.0)/4.0
     pp.append(dominates(ef, rm, ff[1], nexp[1])*dominates(rm, kt, 1/ff[2], nexp[2]) * factor * (_hbar*_cc)*nn**(4/3.0))
 
@@ -518,18 +525,21 @@ def pressure_gsn_one_nn_kt(nn, tt, mm, ff, nexp, Gamma, _hbar, _cc):
     # in that (extremely minor) correction.
     # FIXME -- factor 1.5 here, too, see above
     # factor = 3**(4/3.0)*np.pi**(2/3.0)/8.0 
+    # Can't have binding energy greater than rest mass energy, so ffree not needed
     factor = 3**(1/3.0)*np.pi**(2/3.0)/4.0 
     factor = factor * (Gamma/2.0)**(-1/3.0)
     pp.append(dominates(ef, kt, ff[3], nexp[3])*dominates(kt, rm, ff[2], nexp[2]) * factor * (_hbar*_cc)*nn**(4/3.0))
     
     # Relativistic gas.  in this case, fermi energy is meaningless since kt >> ef
+    # Can't have binding energy greater than rest mass energy, so ffree not needed
     factor = Gamma*np.pi**2/(45*_cc**3*_hbar**3)
     pp.append((dominates(kt, ef, 1/ff[3], nexp[3])*dominates(ef, rm) + 
                dominates(kt, rm, ff[4], nexp[4])*dominates(rm, ef)) * factor * kt**4)
               
     return sum(pp)
 
-def entropy_gsn_one_nn_kt(nn, tt, mm, ff, nexp, Gamma, _hbar, _cc):
+# FIXME -- this is not kt, should be just tt
+def entropy_gsn_one_nn_kt(nn, tt, ffree, mm, ff, nexp, Gamma, _hbar, _cc):
     """Compute entropy for one species of particle.  
 
     Gamma = number of degrees of freedom as fn of energy for rel. gas.
@@ -561,7 +571,7 @@ def entropy_gsn_one_nn_kt(nn, tt, mm, ff, nexp, Gamma, _hbar, _cc):
     
     sigma = []
     # ideal gas
-    sigma.append(dominates(rm, kt, 1/ff[4], nexp[4])*dominates(kt, ef, 1/ff[0], nexp[0]) * (np.log(nq/nn) + 2.5))
+    sigma.append(dominates(rm, kt, 1/ff[4], nexp[4])*dominates(kt, ef, 1/ff[0], nexp[0]) * ffree * (np.log(nq/nn) + 2.5))
 
     # degenerate non-relativisitic 
     factor = 2*np.pi**(5/3.0)/3**(2/3.0)
@@ -590,19 +600,22 @@ def pressure_gsn_nn_kt(_me=me, ff_e=1.0, nexp_e=4.0, Gamma_e=4.0,
     contribution to the pressure."""
     # serves to fix constants, electron mass, etc.
     def pressure_gsn_explicit(nn,tt):
-        return (pressure_gsn_one_nn_kt(nn, tt, mm=_me, ff=ff_e, nexp=nexp_e, Gamma=Gamma_e, _hbar=_hbar, _cc=_cc)
-                + pressure_gsn_one_nn_kt(nn, tt, mm=_mp, ff=ff_p, nexp=nexp_p, Gamma=Gamma_p, _hbar=_hbar, _cc=_cc))
+        ffree = dominates(tt, tion, 1.0, nexp_ion)
+        return (pressure_gsn_one_nn_kt(nn, tt, ffree, mm=_me, ff=ff_e, nexp=nexp_e, Gamma=Gamma_e, _hbar=_hbar, _cc=_cc)
+                + pressure_gsn_one_nn_kt(nn, tt, 1.0, mm=_mp, ff=ff_p, nexp=nexp_p, Gamma=Gamma_p, _hbar=_hbar, _cc=_cc))
     return pressure_gsn_explicit
 
-def entropy_gsn_nn_kt(_me=me, ff_e=1.0, nexp_e=4.0, Gamma_e=4.0, 
-                       _mp=mp, ff_p=1.0, nexp_p=4.0, Gamma_p=4.0,
-                       _hbar=hbar, _cc=cc):
+def entropy_gsn_nn_kt(tion=1e4, nexp_ion=2, 
+                      _me=me, ff_e=1.0, nexp_e=4.0, Gamma_e=4.0, 
+                      _mp=mp, ff_p=1.0, nexp_p=4.0, Gamma_p=4.0,
+                      _hbar=hbar, _cc=cc):
     """Make a function that combines the proton and electron
     contribution to the entropy."""
     # serves to fix constants, electron mass, etc.
     def entropy_gsn_explicit(nn,tt):
-        return (entropy_gsn_one_nn_kt(nn, tt, mm=_me, ff=ff_e, nexp=nexp_e, Gamma=Gamma_e, _hbar=_hbar, _cc=_cc) + 
-                entropy_gsn_one_nn_kt(nn, tt, mm=_mp, ff=ff_p, nexp=nexp_p, Gamma=Gamma_p, _hbar=_hbar, _cc=_cc))
+        ffree = dominates(tt, tion, 1.0, nexp_ion)
+        return (entropy_gsn_one_nn_kt(nn, tt, ffree, mm=_me, ff=ff_e, nexp=nexp_e, Gamma=Gamma_e, _hbar=_hbar, _cc=_cc) + 
+                entropy_gsn_one_nn_kt(nn, tt, 1.0, mm=_mp, ff=ff_p, nexp=nexp_p, Gamma=Gamma_p, _hbar=_hbar, _cc=_cc))
     return entropy_gsn_explicit
      
 
