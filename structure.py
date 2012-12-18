@@ -370,19 +370,25 @@ def pressure_scvh(other_arg, filename='table'):
 #     mu_func = interp_rect_spline(rho,sigma,mu,
 #                                    logx=True, logy=True, logz=True)
 #     return rho_func, temp_func, mu_func
-
-
+    
 def density_temperature_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
+    def read_mesa_tables_slow(filename_base):
+        return [np.loadtxt(filename_base + '_logP.txt'),
+                np.loadtxt(filename_base + '_sigma.txt'),
+                np.loadtxt(filename_base + '_logrho.txt'),
+                np.loadtxt(filename_base + '_logT.txt'),
+                np.loadtxt(filename_base + '_mu.txt')]
+
     def clean_array(xx):
         idx_good = ( np.logical_not(np.isnan(xx)) &  
                      np.logical_not(np.isinf(xx)) )
         idx_bad = np.isnan(xx) | np.isinf(xx)
         xx[idx_bad] = (xx[idx_good]).mean()
-    logpressure = np.loadtxt(filename + '_logP.txt')
-    sigma = np.loadtxt(filename + '_sigma.txt')
-    logrho = np.loadtxt(filename + '_logrho.txt')
-    logtemp = np.loadtxt(filename + '_logT.txt')
-    mu = np.loadtxt(filename + '_mu.txt')
+
+    read_mesa_tables = memoize(read_mesa_tables_slow)
+    
+    logpressure, sigma, logrho, logtemp,mu = read_mesa_tables(filename)
+
     rho = 10**logrho; pressure = 10**logpressure; temp = 10**logtemp
     pressure = pressure[:,0]
     sigma = sigma[0,:]
@@ -391,9 +397,6 @@ def density_temperature_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
     temp_func = interp_rect_spline(pressure,sigma,temp, logx=True, logz=True)
     mu_func = interp_rect_spline(pressure,sigma,mu, logx=True, logz=True)
     return rho_func, temp_func, mu_func
-
-# def pressure_mesa(filename='../eos/MESA_EOS/rho_sig_grid'):
-#     # return pressure_temperature_mesa(filename)[0]
 
 
 def density_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
