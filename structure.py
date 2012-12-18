@@ -1711,6 +1711,7 @@ elif eos == 'gsn':
     global_density = None 
 elif eos == 'mesa':
     global_density = density_mesa(**eos_parameters)
+    global_energy = lambda x,y: 1.0
 else:
     raise SyntaxError, "Unknown Equation of State: %s" % eos
 
@@ -2414,6 +2415,26 @@ def one_model(mm, log_rho, pci,
     lr, lp, lrho = one_simple_model(mm, np.exp(lpcf), log_rho)
     return np.exp(lr), np.exp(lp), np.exp(lrho)
 
+
+def thermal_en_1(rs, ps, sigma):
+    # query equation of state
+    # FIXME -- argh, fix this already
+    sigmas = 0*ps + sigma
+    en_dens = global_energy(ps, sigmas)
+    igrand = ave(4*np.py*rs**2*en_dens)
+    return (igrand*diff(rs)).sum()
+    
+    
+def thermal_en_2(rs, ps, sigma):
+    def igrand(rr):
+        return 4*np.pi*rr**2 * en_func(rr)
+
+    # FIXME -- argh, fix this already
+    sigmas = 0*ps + sigma
+    en_dens = global_energy(ps, sigmas)
+    en_func = interp_1d(rs, en_dens)
+
+    return scipy.integrate.quad(igrand, rs[0], rs[-1])[0]
 
 def grav_pe(rs, rhos):
     igrand = ave(4*np.pi*rs**2*rhos)
