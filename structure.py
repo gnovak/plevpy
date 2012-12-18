@@ -28,7 +28,7 @@
 # 6) loadtxt(filename) to load tables from text files.
 
 import hashlib
-import os
+import os, os.path
 import cPickle
 import types
 
@@ -398,6 +398,157 @@ def temperature_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
 def mu_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
     return density_temperature_mesa(filename)[2]
     # return pressure_temperature_mesa(filename)[2]
+
+######################################
+### Functions for reading the SCvH EoS
+######################################
+def read_the_stuff(the_eos_directory):
+    result = {}
+    for root, dirs, files in os.walk(the_eos_directory):
+        for f in files:
+            fullpath = os.path.join(root, f)
+            name = canonize(fullpath)
+            result[name] = np.loadtxt(fullpath)        
+            print fullpath
+    return result
+
+def canonize(name):
+    return '.'.join((name.split('/')[-1]).split('.')[:-1])
+
+def getS(p_values, t_values, S_grid):
+    return interp_rect_spline(p_values,t_values,S_grid, False, False, False)
+
+def make_the_tables(Y = 0.25, dirpath = 'reformated_eos_tables/i/'):
+    """Y = helium mass fraction"""
+    denom_small = 1e-2
+    
+    result = read_the_stuff(dirpath)
+
+    # GSN -- Interpolation routines unfortunately get confused if
+    # there are nans anywhere in the array, so purge them here.
+    def good(aa):
+        bb = np.array(aa)
+        fill = bb[bb==bb].mean()
+        bb[bb!=bb] = fill
+        return bb
+
+    for kk in result.keys():
+        result[kk] = good(result[kk])
+    
+    logP_array = result['h_tab_i_logP_array']
+    logT_array = result['h_tab_i_logT_array']
+    Scgs_array_H  = 10**result['h_tab_i_logScgs']
+    Scgs_array_He = 10**result['he_tab_i_logScgs']
+    # GSN -- changing to logrho in following two lines
+    logrho_array_H  = result['h_tab_i_logrho']
+    logrho_array_He = result['he_tab_i_logrho']
+
+    # GSN -- adding choice about degree of spline interpolation to
+    # calls to interp_rect_spline
+    kx, ky = 1, 1
+
+    # S and rho functions
+    Scgs_of_logPlogT_H  = interp_rect_spline(logP_array[0,:],logT_array[:,0],
+                           Scgs_array_H.transpose(),False, False, False, 
+                                          kx=kx, ky=ky)
+    Scgs_of_logPlogT_He = interp_rect_spline(logP_array[0,:],logT_array[:,0],
+                           Scgs_array_He.transpose(),False, False, False, 
+                                          kx=kx, ky=ky)
+    # GSN -- looking at values, think this has to be log rho
+    # GSN -- changing rho to logrho in following two lines
+    logrho_of_logPlogT_H  = interp_rect_spline(logP_array[0,:],logT_array[:,0],
+                           logrho_array_H.transpose(),False, False, False, 
+                                               kx=kx, ky=ky)
+    logrho_of_logPlogT_He = interp_rect_spline(logP_array[0,:],logT_array[:,0],
+                           logrho_array_He.transpose(),False, False, False, 
+                                               kx=kx, ky=ky)
+    # Mixing ratio functions
+    XH2_of_logPlogT = interp_rect_spline(logP_array[0,:],logT_array[:,0],
+                           result['h_tab_i_Xwhole'].transpose(),False, False, False, 
+                                         kx=kx, ky=ky)
+    XHe_of_logPlogT = interp_rect_spline(logP_array[0,:],logT_array[:,0],
+                           result['he_tab_i_Xwhole'].transpose(),False, False, False, 
+                                         kx=kx, ky=ky)
+    XH_of_logPlogT = interp_rect_spline(logP_array[0,:],logT_array[:,0],
+                           result['h_tab_i_Xsplit'].transpose(),False, False, False, 
+                                        kx=kx, ky=ky)
+    XHeplus_of_logPlogT = interp_rect_spline(logP_array[0,:],logT_array[:,0],
+                           result['he_tab_i_Xsplit'].transpose(),False, False, False, 
+                                             kx=kx, ky=ky)
+
+    def S_of_PT(P,T):
+        Scgs_H  = Scgs_of_logPlogT_H(np.log10(P),np.log10(T))
+        Scgs_He = Scgs_of_logPlogT_He(np.log10(P),np.log10(T))
+        # for Smix, see Eqs 48-56 of SCvH 1996
+        XH      = XH_of_logPlogT(np.log10(P),np.log10(T))
+        XHe     = XHe_of_logPlogT(np.log10(P),np.log10(T))
+        XH2     = XH2_of_logPlogT(np.log10(P),np.log10(T))
+        XHeplus = XHeplus_of_logPlogT(np.log10(P),np.log10(T))
+        XeH     = 0.5*(1 - XH2 - XH)
+        XeHe    = (1./3.)*(2 - 2*XHe - XHeplus)
+        mH  = mp
+        mHe = 4*mp
+        beta = (mH/mHe) * Y/(1-Y)
+        gamma = (3./2.) * (1. + XH + 3*XH2)/(1. + 2*XHe + XHeplus)
+        # GSN -- Also, sometimes results in division by zero
+        delta_const = (2./3.) * beta*gamma
+        delta_num =  (2. - 2.*XHe - XHeplus) 
+        delta_denom = (1. - XH2 - XH)
+        delta = delta_const*delta_num / delta_denom
+        delta[abs(delta_denom) < denom_small] = 0
+
+        # SCvH eq 53
+        Smix_per_kB_prefactor = (1.-Y)/mp * 2./(1 + XH + 3*XH2) 
+        Smix_per_kB_part1 = np.log(1+beta*gamma) - XeH*np.log(1+delta) + beta*gamma * np.log(1+1./(beta*gamma))
+        Smix_per_kB_part2 = -beta*gamma*XeHe*np.log(1+1./delta)
+        Smix_per_kB_part2[abs(delta_denom) < denom_small] = 0
+        Smix_per_kB = Smix_per_kB_prefactor*(Smix_per_kB_part1 + Smix_per_kB_part2)
+        
+        # Algebra for part 2 of above formula showing that that part -> 0
+        # (1/3)*num * log ( (const*num + denom) / (const*num))
+        # (1/3)*num * log (const*num + denom)  - log(const*num))
+        # (1/3)*num * log (const*num + denom)  - (1/3)*num * log(const*num))
+        
+        Smix_cgs = kB*Smix_per_kB
+        # GSN -- might want to verify cgs/unitless conversion here.
+        # GSN -- thought that entropy of mixing should be order unity, but this gives numbers ~ 10^-5
+        Scgs = (1.-Y)*Scgs_H + Y*Scgs_He + Smix_cgs
+        S = Scgs*mp/kB 
+        return S
+
+    def rho_of_PT(P,T):
+        # GSN changing PT to logPlogT in function calls on next two lines
+        # GSN changing rho to logrho on following two lines
+        rho_H  = 10**logrho_of_logPlogT_H(np.log10(P),np.log10(T))
+        rho_He = 10**logrho_of_logPlogT_He(np.log10(P),np.log10(T))
+        # GSN -- sure I'm being dumb but this doesn't look right to
+        # me.  Convince myself that it's right.
+        one_over_rho = (1.-Y)/rho_H + Y/rho_He
+        rho = 1./one_over_rho
+        return rho
+
+    return S_of_PT, rho_of_PT, logP_array, logT_array
+
+#def rho_of_logT_logP(log)
+   
+#def getS(P_grid,T_grid,Scgs_grid): # function that interpolates S(P,T)
+#    P_vec = np.unique(P_grid)
+#    T_vec = np.unique(T_grid)
+#    Scgs_fn = scipy.interpolate.interp2d(P_vec,T_vec,S_grid)
+#    return Scgs_fn
+
+#def S_of_TP(P_grid,T_grid,Scgs_grid,P,T): # function that interpolates S(P,T)
+#    P_vec = np.unique(P_grid)
+#    T_vec = np.unique(T_grid)
+#    Scgs_fn = interp_rect_spline(P_vec,T_vec,tt,logx=True, logy=True, logz=True)
+#    return Scgs_fn
+
+#def getrho(P_grid,T_grid,rho_grid): # function that interpolates rho(P,T)
+#    P_vec = np.unique(P_grid)
+#    T_vec = np.unique(T_grid)
+#    rho_fn = scipy.interpolate.interp2d(P_vec,T_vec,rho_grid)
+#    return rho_fn
+
 
 def pressure_polytrope(gamma=(5,3), rho_scale=1.0):
     """rho_scale in cgs"""
