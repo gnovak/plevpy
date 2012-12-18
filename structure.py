@@ -2123,6 +2123,14 @@ def skip_fortran(f, n=1, swap=False, pad_type='i'):
 
         assert c1 == c2 == p2-p1
 
+def n_quantum(temp, mm=1.67e-24/1836.0):
+    return (mm*kb*temp/(2*pi*hbar**2))**1.5
+
+n_quantum_electron = n_quantum 
+
+def n_quantum_proton(temp):
+    return n_quantum(temp, mm=1.67e-24)
+
 def read_all_fortran(f, spec, swap=False, warning=False, intType='i'):
     """Read all fortran data from a file.  spec is a list of types of each block"""
 # What are the use cases?
