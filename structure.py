@@ -2602,3 +2602,140 @@ def read_all_fortran(f, spec, swap=False, warning=False, intType='i'):
 
     return result
 
+
+##############################
+
+# ##############################
+# # For DSP, meditation on functions as data 
+# 
+# # Python has special syntax for a useful function argument: *, which
+# # means "All arguments not mentioned so far."  It's used like this:
+# 
+# def f1(x, y, *args):
+#     print "named args:", x, y, "  other args:", args
+# 
+# # Calling this gives:
+# # In [42]: f1(1,2)  => named args: 1 2   other args: ()
+# # In [43]: f1(1,2,3) => named args: 1 2   other args: (3,)
+# # In [44]: f1(1,2,3,4) => named args: 1 2   other args: (3, 4)
+# # 
+# # x and y are mandatory, so f(1) is an error, but args can be anything
+# # from an empty tuple to... anything at all.
+# #
+# # There's special syntax for another function argument, **, which
+# # means "all keyword arguments not mentioned so far."  The indicated
+# # arg will be a dict containing all keyword args.  
+# 
+# def f2(x, y, z=None, **kw):
+#     print "args:", x, y, "  kw arg", z, "  other args:", kw
+# 
+# # This lets you do:
+# # In [60]: f2(1,2) => args: 1 2   kw arg None   other args: {}
+# # In [61]: f2(1,2, z=3) => args: 1 2   kw arg 3   other args: {}
+# # In [62]: f2(1,2, z=3, mu=55, nu=66) => args: 1 2   kw arg 3   other args: {'mu': 55, 'nu': 66}
+# 
+# # Now you can combine them to produce a function that will take
+# # _anything_ as arguments.
+# 
+# def f3(*aa, **kw):
+#     print "args", aa, "  kw args", kw
+# 
+# # In [64]: f3(1,2) => args (1, 2)   kw args {}
+# # In [65]: f3(1,2, a=3, b=4) => args (1, 2)   kw args {'a': 3, 'b': 4}
+# 
+# # Now, what if you have a tuple floating around and want to use it as
+# # a function argument?  This doesn't work:
+# # args = (1,2); f1(args)
+# 
+# # because f1 needs _two_ arguments, and it just received _one_
+# # argument (the tuple that contained both values).  You need syntax
+# # that says "Explode this tuple into a function argument so that it
+# # looks like a normal function call.  That is (again) *:
+# 
+# # In [67]: f1(args) => TypeError: f1() takes at least 2 arguments (1 given)
+# # In [68]: f1(*args)=> named args: 1 2   other args: ()
+# 
+# # and similarly for **kw:
+# # In [72]: f3(1,2,z=3,kw) => SyntaxError: non-keyword arg after keyword arg
+# # In [73]: f3(1,2,z=3,**kw) => args: 1 2   kw arg 3   other args: {'a': 5, 'b': 7}
+# 
+# # What this allows you to do is write functions that operate on functions
+# 
+# # This is pretty easy:
+# 
+# def func_add_1(f1, f2):
+#     def result(*aa, **kw):
+#         return f1(*aa, **kw) + f2(*aa, **kw)
+#     return result
+# 
+# # and would be used like this:
+# # def rho_h(p,t): return foo
+# # def rho_he(p,t): return bar
+# # rho = func_add_1(rho_h, rho_he)
+# # rho(1e6, 100)
+# 
+# # This syntax is standard for many languages but is falling out of
+# # favor in Python: Lambda just allows you to define a function without
+# # naming it.
+# 
+# def func_add_1(f1, f2):
+#     return lambda *aa, **kw: f1(*aa, **kw) + f2(*aa, **kw)
+# 
+# # But anyway, why limit ourselves to adding _two_ functions.  How about this:
+# 
+# def func_add_2(*fs):
+#     def result(*aa, **kw):
+#         the_sum = fs[0](*aa, **kw)
+#         for ff in fs:
+#             the_sum += ff(*aa, **kw) # dss comment: does this double-count fs[0]?
+#         return the_sum
+#     return result
+# 
+# # Or this, somewhat more aesthetically appealing version of the same thing:
+# 
+# def func_add_3(*fs):
+#     def result(*aa, **kw):
+#         values = [ff(*aa, **kw) for ff in fs]
+#         return reduce(lambda x,y: x+y, values)
+#     return result
+# 
+# # But, notice that the fact that we're adding things just appears in
+# # the form of that anonymous function passed to 'reduce'.  Why not
+# # make that an argument?
+# 
+# def func_reduce(f_reduce, *fs):
+#     def result(*aa, **kw):
+#         values = [ff(*aa, **kw) for ff in fs]
+#         return reduce(f_reduce, values)
+#     return result
+# 
+# # now you can do things like this:
+# # rho = func_reduce(lambda x,y: x+y, rho_h, rho_he)
+# # rho = func_reduce(lambda x,y: x+y, rho_h, rho_he, rho_metals)
+# # or 
+# # total_prob = func_reduce(lambda x,y: x*y, p_event_1, p_event_2, p_event3)
+# # and func_reduce handles all of these cases.  
+# 
+# # Incidentally, python defines some of the common operations for you,
+# # so you can type this instead of the lambda functions:
+# # import operator
+# # rho = func_reduce(operator.add, rho_h, rho_he)
+# 
+# # Bringing this back to earth a little bit, you mentioned weighted
+# # sums for the density at least, which would look something like this.
+# # The function is getting two different things, functions and weights,
+# # so it can't use Python's * arg syntax anymore.  You have to pass in
+# # a list of weights and a list of functions.
+# def func_wadd(ws, fs):
+#     def result(*aa, **kw):
+#         the_sum = ws[0] * fs[0](*aa, **kw)
+#         for ww, ff in zip(ws, fs):
+#             the_sum += ww * ff(*aa, **kw)
+#         return the_sum
+#     return result
+# 
+# # then it's called like this:
+# # rho = func_wadd((0.74, 0.24, 0.02), (rho_h, rho_he, rho_z))
+# 
+# # End rumination
+# ##############################
