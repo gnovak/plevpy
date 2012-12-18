@@ -1269,10 +1269,10 @@ def pressure_gsn_irregular_interpolation(rhos=None, temps=None,
 
     R, T = make_grid(rhos, temps)
         
-    pp = (pressure_gsn_one_nn_kt(R/_mp, T, mm=_me, ff=ff_e, nexp=nexp_e, Gamma=Gamma_e, _hbar=_hbar, _cc=_cc) +
-          pressure_gsn_one_nn_kt(R/_mp, T, mm=_mp, ff=ff_p, nexp=nexp_p, Gamma=Gamma_p, _hbar=_hbar, _cc=_cc))
-    sigma = (entropy_gsn_one_nn_kt(R/_mp, T, mm=_me, ff=ff_e, nexp=nexp_e, Gamma=Gamma_e, _hbar=_hbar, _cc=_cc) +
-             entropy_gsn_one_nn_kt(R/_mp, T, mm=_mp, ff=ff_p, nexp=nexp_p, Gamma=Gamma_p, _hbar=_hbar, _cc=_cc))
+    pp = (pressure_gsn_one_nn_kt(R/_mp, T, ffree, mm=_me, ff=ff_e, nexp=nexp_e, Gamma=Gamma_e, _hbar=_hbar, _cc=_cc) +
+          pressure_gsn_one_nn_kt(R/_mp, T, 1.0, mm=_mp, ff=ff_p, nexp=nexp_p, Gamma=Gamma_p, _hbar=_hbar, _cc=_cc))
+    sigma = (entropy_gsn_one_nn_kt(R/_mp, T, ffree, mm=_me, ff=ff_e, nexp=nexp_e, Gamma=Gamma_e, _hbar=_hbar, _cc=_cc) +
+             entropy_gsn_one_nn_kt(R/_mp, T, 1.0, mm=_mp, ff=ff_p, nexp=nexp_p, Gamma=Gamma_p, _hbar=_hbar, _cc=_cc))
     pressure = interp(R, sigma, pp, logx=True, logy=True, logz=True)
 
     return pressure
