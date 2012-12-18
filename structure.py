@@ -62,8 +62,8 @@ import pylab
 # eos = 'polytrope'
 # eos_parameters = dict(gamma=(5,3))
 
-eos = 'gsn'
-#eos = 'mesa'
+#eos = 'gsn'
+eos = 'mesa'
 eos_parameters = dict()
 
 # Make sure the analytic "toy" EOS always exists.
@@ -2149,9 +2149,9 @@ def hse(pc=None, sigma=5.0, filename=None,
     """Find hydrostatic equilibrium using pressure as the independent
     variable."""
     if pc is None:
-        pc = np.logspace(5,25,40) 
+        pc = np.logspace(5,25,40)
     elif not np.iterable(pc):
-        pc = [pc] 
+        pc = [pc]
 
     def derivs(yy,xx):
         lm, lr = yy
@@ -2167,7 +2167,7 @@ def hse(pc=None, sigma=5.0, filename=None,
     pi = np.pi
 
     # number of values of the pressure to include in a single model calc.
-    n_p_model = 100 
+    n_p_model = 10000
 
     # radius at which to start the calculation
     r_min = 1e5 # cgs
@@ -2363,13 +2363,13 @@ def one_model(mm, log_rho, pci,
     lr, lp, lrho = one_simple_model(mm, np.exp(lpcf), log_rho)
     return np.exp(lr), np.exp(lp), np.exp(lrho)
 
-def grav_pe_1(rs, rhos):
+def grav_pe(rs, rhos):
     igrand = ave(4*np.pi*rs**2*rhos)
     ms = (igrand*np.diff(rs)).cumsum()
     igrand2 = - G*ms*ave(4*np.pi*rs*rhos)
     return (igrand2*np.diff(rs)).sum()
 
-def grav_pe_2(rs, rhos):
+def grav_pe_very_slow(rs, rhos):
     # Should take integrals from zero... could add small correction
     # for central bit assuming constant density.
     # Maybe someday check error estimates on integrals...
@@ -2386,7 +2386,7 @@ def grav_pe_2(rs, rhos):
 
     return scipy.integrate.quad(igrand_2, rs[0], rs[-1])
 
-def grav_pe_3(rs, rhos):
+def grav_pe_slow(rs, rhos):
     # Should take integrals from zero... could add small correction
     # for central bit assuming constant density.
     # Maybe someday check error estimates on integrals...
