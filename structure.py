@@ -2212,6 +2212,54 @@ def one_model(mm, log_rho, pci,
     lr, lp, lrho = one_simple_model(mm, np.exp(lpcf), log_rho)
     return np.exp(lr), np.exp(lp), np.exp(lrho)
 
+def grav_pe_1(rs, rhos):
+    igrand = ave(4*np.pi*rs**2*rhos)
+    ms = (igrand*np.diff(rs)).cumsum()
+    igrand2 = - G*ms*ave(4*np.pi*rs*rhos)
+    return (igrand2*np.diff(rs)).sum()
+
+def grav_pe_2(rs, rhos):
+    # Should take integrals from zero... could add small correction
+    # for central bit assuming constant density.
+    # Maybe someday check error estimates on integrals...
+    rhof = interp_1d(rs,rhos)
+
+    def igrand(rr):
+        return 4*np.pi*rr**2 * rhof(rr)
+
+    def m_func(rr):
+        return scipy.integrate.quad(igrand, rs[0], rr)[0]
+
+    def igrand_2(rr):
+        return - G*m_func(rr)*4*np.pi*rr*rhof(rr)
+
+    return scipy.integrate.quad(igrand_2, rs[0], rs[-1])
+
+def grav_pe_3(rs, rhos):
+    # Should take integrals from zero... could add small correction
+    # for central bit assuming constant density.
+    # Maybe someday check error estimates on integrals...
+    rhof = interp_1d(rs,rhos)
+
+    def igrand(rr):
+        return 4*np.pi*rr**2 * rhof(rr)
+
+    def m_integral(rl, rh):
+        return scipy.integrate.quad(igrand, rl, rh)[0]
+
+    def igrand_2(rr):
+        return - G*m_func(rr)*4*np.pi*rr*rhof(rr)
+
+    ms = [m_integral(rl, rh) for rl, rh in zip(rs[0:], rs[1:])]
+    m0 = [ 4*np.pi*rs[0]**3 * rhos[0] / 3.0 ] 
+    
+    dm_points = m0 + ms
+    m_points = np.array(dm_points).cumsum()
+
+    m_func = interp_1d(rs, m_points) 
+
+    return scipy.integrate.quad(igrand_2, rs[0], rs[-1])
+
 ##############################
 ### Utility functions
 ##############################
