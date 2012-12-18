@@ -294,6 +294,38 @@ def main_function():
     hse(pressure)
 
 ##############################
+### Atmospheric boundary conditions
+##############################
+
+def read_atmospheric_bc_table(filename="../bound_py_isotropic_default.dat"):
+    bc = np.loadtxt(filename)
+    # If 8 columns, it's an "expanded" boundary condition where we
+    # only need columns 1 2 and 4
+    if bc.shape[1] == 8:
+        bc = bc[:,[0,1,3]]
+    xax = np.unique(bc[:,0])
+    yax = np.unique(bc[:,1])
+    nx = len(xax)
+    ny = len(yax)
+    assert bc.shape[0] == nx*ny
+    Teff = bc[:,0].reshape(nx,ny)
+    logg = bc[:,1].reshape(nx,ny)
+    sigma = bc[:,2].reshape(nx,ny)    
+    # make sure that the table is oriented the way it should be    
+    assert all(Teff[0,:] == Teff[0,0])
+    assert all(logg[:,0] == logg[0,0])    
+    return Teff, logg, sigma
+
+def atmospheric_bc(filename="../bound_py_isotropic_default.dat", 
+                   s_axis=np.linspace(5,11,100),
+                   logg_axis=np.linspace(1,4,100)):
+
+    Teff, logg, sigma = read_atmospheric_bc_table(filename)
+    Teff_grid = pylab.griddata(sigma.ravel(), logg.ravel(), Teff.ravel(), 
+                               s_axis, logg_axis, interp='nn')    
+    return interp_rect_spline(s_axis, logg_axis, Teff_grid)
+
+##############################
 ### Equations of state
 ##############################
 def pressure_scvh(other_arg, filename='table'):
