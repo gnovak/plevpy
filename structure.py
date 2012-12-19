@@ -2460,16 +2460,27 @@ def one_model(mm, log_rho, pci,
     return np.exp(lr), np.exp(lp), np.exp(lrho)
 
 
-def thermal_en_1(rs, ps, sigma):
+def total_en(mass, sigma):
+    pc = pc_M_S_pressure(mass, sigma)
+    pp, mm, rr, rho = hse(pc, sigma)    
+    return grav_pe(rr[0], rho[0]) + thermal_en(rr[0], pp[0], sigma)
+
+def de_dsigma(mass, sigma, fsigma=0.01):
+    dsigma = fsigma*sigma
+    return (total_en(mass, sigma+dsigma) - 
+            total_en(mass, sigma-dsigma)) / (2*dsigma)
+
+
+def thermal_en(rs, ps, sigma):
     # query equation of state
     # FIXME -- argh, fix this already
     sigmas = 0*ps + sigma
     en_dens = global_energy(ps, sigmas)
-    igrand = ave(4*np.py*rs**2*en_dens)
-    return (igrand*diff(rs)).sum()
+    igrand = ave(4*np.pi*rs**2*en_dens)
+    return (igrand*np.diff(rs)).sum()
     
     
-def thermal_en_2(rs, ps, sigma):
+def thermal_en_slow(rs, ps, sigma):
     def igrand(rr):
         return 4*np.pi*rr**2 * en_func(rr)
 
