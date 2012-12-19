@@ -2539,8 +2539,42 @@ def grav_pe_slow(rs, rhos):
 
     m_func = interp_1d(rs, m_points) 
 
-    return scipy.integrate.quad(igrand_2, rs[0], rs[-1])
+    return scipy.integrate.quad(igrand_2, rs[0], rs[-1])[0]
 
+##############################
+##############################
+## Evolution
+##############################
+
+# ts = logspace(log10(1e3*yr), log10(1e10*yr), 100)
+def evolve(mass, sig0, ts = np.linspace(0, 1e3*year, 5)):
+    
+    def derivs(yy,xx):
+        sigma = yy[0]
+
+        rad = R_of_M_S_pressure(mass, sigma)
+        gg = G*mass/rad**2
+
+        # RC 
+        # atmosphere = rc.PlanetGrav(tau0=1000, sig0=sigma, kappa_cgs=0.2, gg_cgs=gg)
+        # flux = atmosphere.fint_cgs
+
+        # table derived BC
+        teff = atmosphere(sigma, np.log10(gg))
+        flux = sigma_sb*teff**4
+
+        # independent of atmosphere
+        lum = 4*np.pi*rad**2*flux        
+        de_ds = de_dsigma(mass, sig0)
+        dsigma_dt = - lum / de_ds
+        print xx/(1e9*year), sigma, lum, rad/Rjup
+        return [dsigma_dt]
+
+    atmosphere = atmospheric_bc()
+
+    #derivs([6.3], 0)
+    result = scipy.integrate.odeint(derivs, [sig0], ts)
+    return result
 
 ##############################
 ### Utility functions
