@@ -185,12 +185,12 @@ def interp_spline(X,Y,Z,logx=True, logy=True, logz=True):
     return interpolator
 
 
-def interp_1d(xx,yy,logx=True, logy=True):
+def interp_1d(xx,yy,logx=True, logy=True, kind='linear'):
 
     xx = np.log(xx) if logx else xx
     yy = np.log(yy) if logy else yy
 
-    internal = scipy.interpolate.interp1d(xx, yy)
+    internal = scipy.interpolate.interp1d(xx, yy, kind=kind)
     
     def interpolator(uu):
         uu = np.log(uu) if logx else uu
