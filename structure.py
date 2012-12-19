@@ -56,6 +56,7 @@ import numpy as np
 
 import pylab
 
+import rc
 ##############################
 # EOS
 # Choices are 'polytrop', 'scvh', 'gsn'
@@ -84,6 +85,7 @@ Lsun = 4e33   # cgs
 AU = 1.5e13   # cgs
 bar = 1e6   # cgs
 cc = 3e10 # cgs
+sigma_sb = 5.67e-5
 
 exts = ['pdf', 'png', 'eps']
 
@@ -335,7 +337,7 @@ def atmospheric_bc(filename="../bound_py_isotropic_default.dat",
     Teff, logg, sigma = read_atmospheric_bc_table(filename)
     Teff_grid = pylab.griddata(sigma.ravel(), logg.ravel(), Teff.ravel(), 
                                s_axis, logg_axis, interp='nn')    
-    return interp_rect_spline(s_axis, logg_axis, Teff_grid)
+    return interp_rect_spline(s_axis, logg_axis, Teff_grid, logx=False, logy=False)
 
 ##############################
 ### Equations of state
@@ -2734,8 +2736,6 @@ def read_all_fortran(f, spec, swap=False, warning=False, intType='i'):
 
     return result
 
-
-##############################
 
 # ##############################
 # # For DSP, meditation on functions as data 
