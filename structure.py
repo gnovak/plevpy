@@ -2317,42 +2317,43 @@ def hse(pc=None, sigma=5.0, filename=None, with_plots=False,
     ########################
     ### Plotting
 
-    pylab.figure(1)
-    pylab.loglog(m_models[:,-1]/Mjup, r_models[:,-1]/Rjup,'-o')
-    pylab.xlabel(r'$M \, (M_J)$')
-    pylab.ylabel(r'$R \, (R_J)$')
-    
-    if filename: 
-        [pylab.savefig(filename + '-m-r-relation.' + ext) for ext in exts]
+    if with_plots:
+        pylab.figure(1)
+        pylab.loglog(m_models[:,-1]/Mjup, r_models[:,-1]/Rjup,'-o')
+        pylab.xlabel(r'$M \, (M_J)$')
+        pylab.ylabel(r'$R \, (R_J)$')
 
-    # plot the models that we have
-    pylab.figure(2)
-    # pylab.clf()
+        if filename: 
+            [pylab.savefig(filename + '-m-r-relation.' + ext) for ext in exts]
 
-    pylab.subplot(221)
-    pylab.xlabel(r'$R \, (R_J)$')
-    pylab.ylabel(r'$M \, (M_J)$')
-    pylab.loglog(r_models.transpose()/Rjup, m_models.transpose()/Mjup)
-    # pylab.xlim(1e-2,1)
-    # pylab.ylim(1e-4,1e2)
+        # plot the models that we have
+        pylab.figure(2)
+        # pylab.clf()
 
-    pylab.subplot(222)
-    pylab.xlabel(r'$R \, (R_J)$')
-    pylab.ylabel(r'$\rho \, (cgs)$')
-    pylab.loglog(r_models.transpose()/Rjup, rho_models.transpose())
-    # pylab.xlim(1e-2,1e1)
-    # pylab.ylim(1e-2,1e4)
+        pylab.subplot(221)
+        pylab.xlabel(r'$R \, (R_J)$')
+        pylab.ylabel(r'$M \, (M_J)$')
+        pylab.loglog(r_models.transpose()/Rjup, m_models.transpose()/Mjup)
+        # pylab.xlim(1e-2,1)
+        # pylab.ylim(1e-4,1e2)
 
-    pylab.subplot(223)
-    pylab.xlabel(r'$R \, (R_J)$')
-    pylab.ylabel(r'$P \, (bar)$')
-    pylab.loglog(r_models.transpose()/Rjup, p_models.transpose()/BAR)
-    # pylab.xlim(1e-2,1)
-    # pylab.ylim(1e5,1e12)
+        pylab.subplot(222)
+        pylab.xlabel(r'$R \, (R_J)$')
+        pylab.ylabel(r'$\rho \, (cgs)$')
+        pylab.loglog(r_models.transpose()/Rjup, rho_models.transpose())
+        # pylab.xlim(1e-2,1e1)
+        # pylab.ylim(1e-2,1e4)
 
-    if filename: 
-        [pylab.savefig(filename + '-models.' + ext) for ext in exts]
-    
+        pylab.subplot(223)
+        pylab.xlabel(r'$R \, (R_J)$')
+        pylab.ylabel(r'$P \, (bar)$')
+        pylab.loglog(r_models.transpose()/Rjup, p_models.transpose()/BAR)
+        # pylab.xlim(1e-2,1)
+        # pylab.ylim(1e5,1e12)
+
+        if filename: 
+            [pylab.savefig(filename + '-models.' + ext) for ext in exts]
+
     return p_models, m_models, r_models, rho_models
 
 
