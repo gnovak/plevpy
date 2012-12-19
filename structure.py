@@ -377,7 +377,8 @@ def density_temperature_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
                 np.loadtxt(filename_base + '_sigma.txt'),
                 np.loadtxt(filename_base + '_logrho.txt'),
                 np.loadtxt(filename_base + '_logT.txt'),
-                np.loadtxt(filename_base + '_mu.txt')]
+                np.loadtxt(filename_base + '_mu.txt'),
+                np.loadtxt(filename_base + '_logE.txt')]
 
     def clean_array(xx):
         idx_good = ( np.logical_not(np.isnan(xx)) &  
@@ -387,31 +388,38 @@ def density_temperature_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
 
     read_mesa_tables = memoize(read_mesa_tables_slow)
     
-    logpressure, sigma, logrho, logtemp,mu = read_mesa_tables(filename)
+    logpressure, sigma, logrho, logtemp, mu, loge = read_mesa_tables(filename)
 
-    rho = 10**logrho; pressure = 10**logpressure; temp = 10**logtemp
+    # get rid of log quantities
+    rho,pressure,temp,en = [10**arr for arr in (logrho, logpressure, logtemp, loge)]
+    # get rid of nans, etc for now
+    for arr in rho, temp, mu, en:
+        clean_array(arr)
+    # make the axes 1d
     pressure = pressure[:,0]
     sigma = sigma[0,:]
-    clean_array(rho); clean_array(temp); clean_array(mu)
     rho_func = interp_rect_spline(pressure,sigma,rho, logx=True, logz=True)
     temp_func = interp_rect_spline(pressure,sigma,temp, logx=True, logz=True)
     mu_func = interp_rect_spline(pressure,sigma,mu, logx=True, logz=True)
-    return rho_func, temp_func, mu_func
+    en_func = interp_rect_spline(pressure,sigma,en, logx=True, logz=True)
+    return rho_func, temp_func, mu_func, en_func
 
 
 def density_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
     return density_temperature_mesa(filename)[0]
-    # return pressure_temperature_mesa(filename)[0]
 
 
 def temperature_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
     return density_temperature_mesa(filename)[1]
-    # return pressure_temperature_mesa(filename)[1]
 
 
 def mu_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
     return density_temperature_mesa(filename)[2]
-    # return pressure_temperature_mesa(filename)[2]
+
+
+def energy_mesa(filename='../eos/MESA_EOS/P_sig_grid'):
+    return density_temperature_mesa(filename)[3]
+
 
 ######################################
 ### Functions for reading the SCvH EoS
@@ -1711,7 +1719,7 @@ elif eos == 'gsn':
     global_density = None 
 elif eos == 'mesa':
     global_density = density_mesa(**eos_parameters)
-    global_energy = lambda x,y: 1.0
+    global_energy = energy_mesa(**eos_parameters)
 else:
     raise SyntaxError, "Unknown Equation of State: %s" % eos
 
