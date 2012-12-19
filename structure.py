@@ -2198,7 +2198,40 @@ def make_global_density(sigma):
     return rho
         
 
-def hse(pc=None, sigma=5.0, filename=None, 
+def R_of_M_S_pressure_interp(mass, ss, tmp):
+    # wild guess about range of central pressure
+    pc = np.logspace(12, 18, tmp)    
+    pp, mm, rr, rho = hse(pc, ss, relative_p_min=False) 
+    return interp_1d(mm[:,-1], rr[:,-1], kind='cubic')(mass)
+
+def R_of_M_S_pressure(mass, ss, pc0 = 1e8*bar):
+    pc = pc_M_S_pressure(mass, ss, pc0)
+    pp, mm, rr, rho = hse(pc, ss, relative_p_min=False)
+    return rr[0,-1]
+
+def pc_M_S_pressure(mass, ss, pc0 = 1e8*bar):
+    def func(pc):
+        pp, mm, rr, rho = hse(pc, ss, relative_p_min=False)
+        return mm[0,-1] - mass
+
+    pcl = pch = pc0
+
+    # expand range until it includes the root
+    while(func(pcl) > 0):
+        pcl /= 2.0
+        if pcl == 0.0: raise RuntimeError
+    while(func(pch) < 0):
+        pch *= 2.0
+        if np.isinf(pch): raise RuntimeError
+
+    # Somewhat dangerous, not flagging non-convergence.  Should do
+    # this with xtol and allow flagging of unconverged attempts.  On
+    # the other hand... we know the root is in the interval so it's
+    # not clear how the algorithm can fail catestrophically.
+    pc = scipy.optimize.bisect(func, pcl, pch, maxiter=10,  disp=False)
+    return pc
+
+def hse(pc=None, sigma=5.0, filename=None, with_plots=False, 
         density = global_density, 
         relative_p_min = True, p_min_rel = 1e-9, p_min_abs = 1e-6*bar):
 
@@ -2223,7 +2256,7 @@ def hse(pc=None, sigma=5.0, filename=None,
     pi = np.pi
 
     # number of values of the pressure to include in a single model calc.
-    n_p_model = 10000
+    n_p_model = 1000
 
     # radius at which to start the calculation
     r_min = 1e5 # cgs
